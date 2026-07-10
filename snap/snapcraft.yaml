@@ -182,6 +182,16 @@ parts:
         "${CRAFT_PART_INSTALL}/bin/node_modules/@mariozechner/clipboard/"
 
   # ============================================================
+  # wl-clipboard — Wayland clipboard tools from Ubuntu package
+  # Needed for clipboard support on Wayland (default display server).
+  # pi uses wl-copy/wl-paste on Wayland; falls back to xclip otherwise.
+  # ============================================================
+  wl-clipboard:
+    plugin: nil
+    stage-packages:
+      - wl-clipboard
+
+  # ============================================================
   # Configuration — wrapper script, bash completion
   # ============================================================
   pi-configuration:
