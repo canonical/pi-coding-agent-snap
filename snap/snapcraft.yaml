@@ -187,9 +187,37 @@ parts:
   # pi uses wl-copy/wl-paste on Wayland; falls back to xclip otherwise.
   # ============================================================
   wl-clipboard:
+    after:
+      - pi-build
     plugin: nil
     stage-packages:
       - wl-clipboard
+    stage:
+      - usr/bin/wl-copy
+      - usr/bin/wl-paste
+      - usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/libwayland-client.so.0
+      - usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/libwayland-client.so.0.*
+    build-packages:
+      - patchelf
+    override-build: |
+      craftctl default
+      case "$CRAFT_ARCH_BUILD_FOR" in
+        amd64)
+          _LDNAME=ld-linux-x86-64.so.2
+          ;;
+        arm64)
+          _LDNAME=ld-linux-aarch64.so.1
+          ;;
+      esac
+      _RPATH='\$ORIGIN/../lib/'"$CRAFT_ARCH_TRIPLET_BUILD_FOR"':/snap/core26/current/lib/'"$CRAFT_ARCH_TRIPLET_BUILD_FOR"
+      patchelf \
+        --set-interpreter /snap/core26/current/lib64/$_LDNAME \
+        --set-rpath "$_RPATH" \
+        $CRAFT_PART_INSTALL/usr/bin/wl-copy \
+        $CRAFT_PART_INSTALL/usr/bin/wl-paste
+      patchelf \
+        --set-rpath /snap/core26/current/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR \
+        $CRAFT_PART_INSTALL/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/libwayland-client.so.0.*
 
   # ============================================================
   # Configuration — wrapper script, bash completion
