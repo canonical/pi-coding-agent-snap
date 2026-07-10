@@ -1,0 +1,76 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: Canonical Ltd.
+name: snapcraft promote
+
+on:
+  workflow_dispatch:
+    inputs:
+      source-channel:
+        description: Snap Store channel to promote revisions from
+        required: true
+        default: latest/candidate
+        type: string
+      target-channel:
+        description: Snap Store channel to promote revisions into
+        required: true
+        default: latest/stable
+        type: string
+
+jobs:
+  promote:
+    name: promote from ${{ inputs.source-channel }} to ${{ inputs.target-channel }}
+    runs-on: ubuntu-24.04
+    environment:
+      name: ${{ inputs.target-channel }}
+      deployment: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.0
+
+      - name: Install snapd snap
+        uses: ./.github/actions/install-cached-snap
+        with:
+          snap-name: snapd
+          channel: latest/stable
+          enable-cache: true
+
+      - name: Install core26 snap
+        uses: ./.github/actions/install-cached-snap
+        with:
+          snap-name: core26
+          channel: latest/stable
+          enable-cache: true
+
+      - name: Install snapcraft snap
+        uses: ./.github/actions/install-cached-snap
+        with:
+          snap-name: snapcraft
+          channel: latest/stable
+          classic: "true"
+          enable-cache: true
+
+      - name: Resolve snap name from snapcraft.yaml
+        id: snap-name
+        shell: bash
+        run: |
+          set -euo pipefail
+          SNAP_NAME="$(sed -nE 's/^name:[[:space:]]*([^[:space:]#]+).*$/\1/p' $(find . -name snapcraft.yaml) | head -n1)"
+          if [ -z "$SNAP_NAME" ]; then
+            echo "::error::Could not determine snap name from snapcraft.yaml"
+            exit 1
+          fi
+          echo "snap-name=$SNAP_NAME" >> "$GITHUB_OUTPUT"
+          echo "Resolved snap name: $SNAP_NAME"
+
+      - name: Promote ${{ inputs.source-channel }} into ${{ inputs.target-channel }}
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+          SNAP_NAME: ${{ steps.snap-name.outputs.snap-name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          snapcraft promote \
+            --from-channel="${{ inputs.source-channel }}" \
+            --to-channel="${{ inputs.target-channel }}" \
+            --yes \
+            "$SNAP_NAME"

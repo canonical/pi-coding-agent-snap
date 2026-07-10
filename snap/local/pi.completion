@@ -1,0 +1,90 @@
+# SPDX-FileCopyrightText: Canonical Ltd.
+# SPDX-License-Identifier: MIT
+#
+# Bash completion for pi.
+# Provides basic flag completion by parsing the help output.
+# Installed via the 'completer' key in snapcraft.yaml.
+
+_pi() {
+    local cur prev opts
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    # If previous word is a flag that takes a value, try to complete accordingly
+    case "$prev" in
+        --model|-m|--provider|--api-key|--thinking|--session|--name|-n|--session-dir|--system-prompt|--append-system-prompt)
+            # Can't really autocomplete these, let bash handle default
+            return 0
+            ;;
+        --tools|--exclude-tools)
+            # Known built-in tool names
+            opts="read bash edit write grep find ls"
+            COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+            return 0
+            ;;
+        --mode)
+            opts="json rpc"
+            COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+            return 0
+            ;;
+        --extension|-e|--skill|--theme|--prompt-template)
+            # File path completion
+            COMPREPLY=( $(compgen -f -- "$cur") )
+            return 0
+            ;;
+    esac
+
+    # Complete flags
+    if [[ "$cur" == -* ]]; then
+        opts="--help -h
+              --version -v
+              --print -p
+              --model
+              --provider
+              --api-key
+              --thinking
+              --tools
+              --exclude-tools
+              --no-tools
+              --no-builtin-tools
+              --continue -c
+              --resume -r
+              --session
+              --fork
+              --no-session
+              --name -n
+              --session-dir
+              --system-prompt
+              --append-system-prompt
+              --extension -e
+              --no-extensions
+              --skill
+              --no-skills
+              --theme
+              --no-themes
+              --prompt-template
+              --no-prompt-templates
+              --no-context-files -nc
+              --verbose
+              --approve -a
+              --no-approve -na
+              --mode
+              --list-models
+              --offline
+              --models
+              --scoped-models"
+        COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+        return 0
+    fi
+
+    # File completion for @file arguments
+    if [[ "$cur" == @* ]]; then
+        local file="${cur#@}"
+        COMPREPLY=( $(compgen -f -- "$file" | sed 's/^/&/') )
+        return 0
+    fi
+
+    return 0
+}
+complete -F _pi pi

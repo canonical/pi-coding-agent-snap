@@ -1,0 +1,156 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: Canonical Ltd.
+name: snapcraft pack
+
+on:
+  workflow_call:
+    inputs:
+      job-arch:
+        type: string
+        description: Architecture label used in the GitHub job name
+        required: true
+      cache-host-snaps:
+        type: boolean
+        description: "Whether to cache host snaps during installation"
+        required: false
+        default: true
+      snapd-channel:
+        type: string
+        description: "Snap store channel for snapd snap"
+        required: false
+        default: latest/stable
+      core26-channel:
+        type: string
+        description: "Snap store channel for core26 snap"
+        required: false
+        default: latest/stable
+      lxd-channel:
+        type: string
+        description: "Snap store channel for LXD snap"
+        required: false
+        default: latest/stable
+      snapcraft-channel:
+        type: string
+        description: "Snap store channel for Snapcraft snap"
+        required: false
+        default: latest/stable
+      runs-on:
+        type: string
+        description: "The type of machine to run on"
+        required: false
+        default: ubuntu-24.04
+    outputs:
+      snap-filename:
+        description: "Filename of the generated snap file"
+        value: ${{ jobs.pack.outputs.snap-filename }}
+      arch:
+        description: "Architecture the snap was built for"
+        value: ${{ jobs.pack.outputs.arch }}
+
+jobs:
+  pack:
+    name: pack (${{ inputs.job-arch }})
+    runs-on: ${{ inputs.runs-on }}
+    outputs:
+      snap-filename: ${{ steps.snap-output.outputs.snap-filename }}
+      arch: ${{ steps.arch.outputs.ARCH }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.0
+
+      - name: Check host architecture
+        id: arch
+        run: echo "ARCH=$(uname -m)" >> $GITHUB_OUTPUT
+
+      - name: Install snapd snap
+        uses: ./.github/actions/install-cached-snap
+        with:
+          snap-name: snapd
+          channel: ${{ inputs.snapd-channel }}
+          enable-cache: ${{ inputs.cache-host-snaps }}
+
+      - name: Install core26 snap
+        uses: ./.github/actions/install-cached-snap
+        with:
+          snap-name: core26
+          channel: ${{ inputs.core26-channel }}
+          enable-cache: ${{ inputs.cache-host-snaps }}
+
+      - name: Install lxd snap
+        uses: ./.github/actions/install-cached-snap
+        with:
+          snap-name: lxd
+          channel: ${{ inputs.lxd-channel }}
+          enable-cache: ${{ inputs.cache-host-snaps }}
+
+      - name: Configure LXD and networking
+        shell: bash
+        run: |
+          sudo lxd init --auto
+          sudo iptables -P FORWARD ACCEPT
+          sudo chmod 666 /var/snap/lxd/common/lxd/unix.socket
+
+      - name: Install snapcraft snap
+        uses: ./.github/actions/install-cached-snap
+        with:
+          snap-name: snapcraft
+          channel: ${{ inputs.snapcraft-channel }}
+          classic: "true"
+          enable-cache: ${{ inputs.cache-host-snaps }}
+
+      - name: Build snap
+        shell: bash
+        run: |
+          snapcraft pack -v
+
+      - name: Capture snap output
+        id: snap-output
+        shell: bash
+        run: |
+          SNAP_FILE=$(ls -1 *.snap 2>/dev/null | head -1)
+          if [ -z "$SNAP_FILE" ]; then
+            echo "ERROR: No snap file generated"
+            exit 1
+          fi
+          echo "snap-filename=${SNAP_FILE}" >> $GITHUB_OUTPUT
+          echo "Snap file: ${SNAP_FILE}"
+
+      - name: Organize artifacts into per-architecture directory
+        id: arch-dir
+        shell: bash
+        run: |
+          SNAP_FILE=$(ls -1 *.snap 2>/dev/null | head -1)
+          if [ -z "$SNAP_FILE" ]; then
+            echo "ERROR: No snap file generated"
+            exit 1
+          fi
+          # Determine target arch from the snap filename
+          case "$SNAP_FILE" in
+            *amd64*) ARCH=amd64 ;;
+            *arm64*) ARCH=arm64 ;;
+            *)
+              echo "::warning::Could not determine arch from snap filename, defaulting to arch"
+              ARCH=arch
+              ;;
+          esac
+          echo "Architecture: $ARCH (from $SNAP_FILE)"
+          mkdir -p "$ARCH"
+          mv *.snap "$ARCH/"
+          echo "arch-dir=$ARCH" >> $GITHUB_OUTPUT
+          ls -la "$ARCH/"
+
+      - name: Upload snap artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ steps.arch.outputs.ARCH }}
+          path: |
+            ${{ steps.arch-dir.outputs.arch-dir }}/*.snap
+          retention-days: 7
+
+      - name: Upload snapcraft logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: snapcraft-logs-${{ steps.arch.outputs.ARCH }}
+          path: "~/.local/state/snapcraft/log/snapcraft-*.log"
+          retention-days: 7

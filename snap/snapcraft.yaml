@@ -1,0 +1,227 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: Canonical Ltd.
+name: pi
+base: core26
+title: Pi
+summary: Minimal extensible coding agent for the terminal
+description: |
+  Pi is a minimal terminal coding harness. Adapt pi to your workflows,
+  not the other way around, without having to fork and modify pi internals.
+
+  Extend it with TypeScript Extensions, Skills, Prompt Templates, and Themes.
+  Pi ships with powerful defaults but skips features like sub agents and
+  plan mode. Instead, you can ask pi to build what you want or install a
+  third party pi package that matches your workflow.
+
+  This snap packages the Bun-compiled standalone binary built from the
+  upstream pi repository.
+
+  The snap packaging is maintained separately at
+  https://github.com/canonical/pi-coding-agent-snap
+license: MIT
+contact: https://github.com/earendil-works/pi/issues
+website: https://pi.dev
+source-code: https://github.com/earendil-works/pi
+issues: https://github.com/earendil-works/pi/issues
+adopt-info: pi-build
+assumes: [snapd2.76]
+
+grade: stable
+confinement: classic
+
+platforms:
+  amd64:
+    build-on: [amd64]
+    build-for: [amd64]
+  arm64:
+    build-on: [arm64]
+    build-for: [arm64]
+
+apps:
+  pi:
+    command: bin/pi.wrapper
+    completer: usr/share/bash-completion/completions/pi.completion
+
+parts:
+  # ============================================================
+  # Node.js — needed for npm workspace and TypeScript compilation
+  # ============================================================
+  nodejs:
+    plugin: dump
+    source:
+      - on amd64 to amd64: https://nodejs.org/dist/v22.23.1/node-v22.23.1-linux-x64.tar.xz
+      - on arm64 to arm64: https://nodejs.org/dist/v22.23.1/node-v22.23.1-linux-arm64.tar.xz
+    override-build: |
+      cd "${CRAFT_PART_SRC}"/node-v*/
+      cp -r bin/* /usr/local/bin/
+      cp -r lib/node_modules /usr/local/lib/
+
+  # ============================================================
+  # Bun — used by pi's build:binary to compile the standalone binary
+  # ============================================================
+  bun:
+    after:
+      - nodejs
+    plugin: dump
+    source:
+      - on amd64 to amd64: https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-linux-x64.zip
+      - on arm64 to arm64: https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-linux-aarch64.zip
+    override-build: |
+      install -Dm755 "${CRAFT_PART_SRC}"/bun-linux-*/bun /usr/local/bin/bun
+      ln -sf /usr/local/bin/bun /usr/local/bin/bunx
+
+  # ============================================================
+  # Pi — clone upstream source, install deps, build binary + assets
+  # ============================================================
+  pi-build:
+    after:
+      - nodejs
+      - bun
+    plugin: nil
+    source: https://github.com/earendil-works/pi
+    source-type: git
+    source-tag: v0.80.6
+    build-packages:
+      - build-essential
+    build-environment:
+      - PATH: "/usr/local/bin:${PATH}"
+    override-build: |
+      set -ex
+
+      echo "Using node: $(node --version)"
+      echo "Using npm: $(npm --version)"
+      echo "Using bun: $(bun --version)"
+
+      # ----------------------------------------------------------
+      # Install workspace dependencies
+      # ----------------------------------------------------------
+      npm ci --ignore-scripts
+
+      # ----------------------------------------------------------
+      # Install clipboard native binding for the target platform
+      # This must happen BEFORE bun build --compile so the binding
+      # is available for embedding and for runtime resolution.
+      # ----------------------------------------------------------
+      case "$CRAFT_ARCH_BUILD_FOR" in
+        amd64)
+          npm install --no-save @mariozechner/clipboard-linux-x64-gnu
+          CLIPBOARD_NATIVE_PKG="clipboard-linux-x64-gnu"
+          CLIPBOARD_NATIVE_FILE="clipboard.linux-x64-gnu.node"
+          ;;
+        arm64)
+          npm install --no-save @mariozechner/clipboard-linux-arm64-gnu
+          CLIPBOARD_NATIVE_PKG="clipboard-linux-arm64-gnu"
+          CLIPBOARD_NATIVE_FILE="clipboard.linux-arm64-gnu.node"
+          ;;
+      esac
+
+      # ----------------------------------------------------------
+      # Build pi binary using pi's own build:binary script.
+      # This compiles TypeScript for all 4 packages, then runs
+      # bun build --compile, then copies runtime assets.
+      # ----------------------------------------------------------
+      cd packages/coding-agent
+      npm run build:binary
+
+      # ----------------------------------------------------------
+      # Derive snap version from the built package.json
+      # ----------------------------------------------------------
+      PI_VERSION=$(node -e "console.log(require('./dist/package.json').version)")
+      craftctl set version="$PI_VERSION"
+
+      # ----------------------------------------------------------
+      # Install the binary into the snap
+      # ----------------------------------------------------------
+      install -Dm755 dist/pi "${CRAFT_PART_INSTALL}/bin/pi"
+
+      # ----------------------------------------------------------
+      # Install supporting assets next to the binary
+      # (getPackageDir() -> dirname(process.execPath) resolves here)
+      # ----------------------------------------------------------
+      install -Dm644 dist/package.json "${CRAFT_PART_INSTALL}/bin/package.json"
+      install -Dm644 dist/README.md "${CRAFT_PART_INSTALL}/bin/README.md"
+      install -Dm644 dist/CHANGELOG.md "${CRAFT_PART_INSTALL}/bin/CHANGELOG.md"
+      install -Dm644 dist/photon_rs_bg.wasm "${CRAFT_PART_INSTALL}/bin/photon_rs_bg.wasm"
+
+      mkdir -p "${CRAFT_PART_INSTALL}/bin/theme"
+      cp -r dist/theme/*.json "${CRAFT_PART_INSTALL}/bin/theme/"
+
+      mkdir -p "${CRAFT_PART_INSTALL}/bin/assets"
+      cp dist/assets/*.png "${CRAFT_PART_INSTALL}/bin/assets/"
+
+      mkdir -p "${CRAFT_PART_INSTALL}/bin/export-html/vendor"
+      cp dist/export-html/template.html "${CRAFT_PART_INSTALL}/bin/export-html/"
+      cp dist/export-html/vendor/*.js "${CRAFT_PART_INSTALL}/bin/export-html/vendor/"
+
+      cp -r dist/docs "${CRAFT_PART_INSTALL}/bin/docs"
+      cp -r dist/examples "${CRAFT_PART_INSTALL}/bin/examples"
+
+      # ----------------------------------------------------------
+      # Install clipboard native binding where pi can find it
+      # clipboard-native.ts resolves @mariozechner/clipboard from
+      # the dir containing process.execPath (i.e. $SNAP/bin/)
+      # ----------------------------------------------------------
+      mkdir -p "${CRAFT_PART_INSTALL}/bin/node_modules/@mariozechner"
+      cp -r ../../node_modules/@mariozechner/clipboard \
+        "${CRAFT_PART_INSTALL}/bin/node_modules/@mariozechner/"
+      cp -r "../../node_modules/@mariozechner/${CLIPBOARD_NATIVE_PKG}" \
+        "${CRAFT_PART_INSTALL}/bin/node_modules/@mariozechner/"
+      cp "../../node_modules/@mariozechner/${CLIPBOARD_NATIVE_PKG}/${CLIPBOARD_NATIVE_FILE}" \
+        "${CRAFT_PART_INSTALL}/bin/node_modules/@mariozechner/clipboard/"
+
+  # ============================================================
+  # wl-clipboard — needed for Wayland clipboard support
+  # (pi explicitly skips the native addon on Linux for text copy,
+  #  relying on wl-copy/wl-paste on Wayland)
+  # ============================================================
+  wl-clipboard:
+    after:
+      - pi-build
+    plugin: meson
+    source: https://github.com/bugaevc/wl-clipboard.git
+    source-tag: v2.3.0
+    build-packages:
+      - meson
+      - ninja-build
+      - libwayland-dev
+      - patchelf
+    meson-parameters:
+      - --prefix=/usr
+    stage:
+      - usr/bin/wl-copy
+      - usr/bin/wl-paste
+      - usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/libwayland-client.so.0
+      - usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/libwayland-client.so.0.*
+    override-build: |
+      craftctl default
+      case "$CRAFT_ARCH_BUILD_FOR" in
+        amd64)
+          _LDNAME=ld-linux-x86-64.so.2
+          ;;
+        arm64)
+          _LDNAME=ld-linux-aarch64.so.1
+          ;;
+      esac
+      _RPATH='$ORIGIN/../lib/'"$CRAFT_ARCH_TRIPLET_BUILD_FOR"':/snap/core26/current/lib/'"$CRAFT_ARCH_TRIPLET_BUILD_FOR"
+      patchelf \
+        --set-interpreter /snap/core26/current/lib64/$_LDNAME \
+        --set-rpath "$_RPATH" \
+        $CRAFT_PART_INSTALL/usr/bin/wl-copy \
+        $CRAFT_PART_INSTALL/usr/bin/wl-paste
+      patchelf \
+        --set-rpath /snap/core26/current/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR \
+        $CRAFT_PART_INSTALL/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/libwayland-client.so.0.*
+
+  # ============================================================
+  # Configuration — wrapper script, bash completion
+  # ============================================================
+  pi-configuration:
+    after:
+      - pi-build
+    plugin: nil
+    source: snap/local
+    override-build: |
+      install -Dm644 "$CRAFT_PART_SRC"/pi.completion \
+        "$CRAFT_PART_INSTALL"/usr/share/bash-completion/completions/pi.completion
+      install -Dm755 "$CRAFT_PART_SRC"/pi.wrapper \
+        "$CRAFT_PART_INSTALL"/bin/pi.wrapper

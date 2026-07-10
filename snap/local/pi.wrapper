@@ -1,0 +1,19 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: Canonical Ltd.
+# SPDX-License-Identifier: MIT
+#
+# Wrapper script for pi that unsets SNAP environment variables.
+# Pi's built-in tools (bash, read, write, edit) should operate in
+# the user's environment, not the snap sandbox environment.
+#
+# Based on the same pattern used by opencode-snap.
+
+# Save the path to the actual binary
+BIN="$SNAP/bin/pi"
+
+# Unset all environment variables starting with SNAP
+for var in $(env | cut -d= -f1 | grep '^SNAP'); do
+    unset "$var"
+done
+
+exec "$BIN" "$@"

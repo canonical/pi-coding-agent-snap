@@ -1,0 +1,55 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "ignorePaths": [
+    "**/node_modules/**",
+    "**/bower_components/**",
+    "**/vendor/**",
+    "**/examples/**",
+    "**/__fixtures__/**"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update pi version in snapcraft.yaml",
+      "managerFilePatterns": [
+        "snap/snapcraft\\.yaml"
+      ],
+      "matchStrings": [
+        "source-tag:\\s*v(?<currentValue>[^\\s]+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "earendil-works/pi",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "Update pi version in task.yaml",
+      "managerFilePatterns": [
+        "tests/smoke/pi/task\\.yaml"
+      ],
+      "matchStrings": [
+        "pi --version 2>&1 \\| MATCH \"(?<currentValue>[0-9.]+)\""
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "earendil-works/pi",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "Update bun",
+      "managerFilePatterns": [
+        "snap/snapcraft\\.yaml"
+      ],
+      "matchStrings": [
+        "https://github\\.com/oven-sh/bun/releases/download/bun-v(?<currentValue>[^/]+)/bun-linux-"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "oven-sh/bun",
+      "extractVersionTemplate": "^bun-v(?<version>.+)$",
+      "versioningTemplate": "semver-coerced"
+    }
+  ]
+}

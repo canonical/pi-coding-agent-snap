@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: Canonical Ltd.
+# SPDX-License-Identifier: MIT
+
+summary: Smoke test for the pi snap
+details: |
+    This test verifies that the pi snap is properly installed,
+    launches without crashing, and prints help output.
+
+execute: |
+    # Verify the snap is installed.
+    snap list | MATCH "pi"
+
+    # Run pi and check help output.
+    snap run pi --help 2>&1 | MATCH "pi"
+
+    # Verify pi --version works (outputs a version number).
+    snap run pi --version 2>&1 | MATCH "^[0-9]+\.[0-9]+\.[0-9]+"
