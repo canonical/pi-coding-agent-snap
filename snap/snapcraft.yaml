@@ -47,14 +47,26 @@ parts:
   # Node.js — needed for npm workspace and TypeScript compilation
   # ============================================================
   nodejs:
-    plugin: dump
-    source:
-      - on amd64 to amd64: https://nodejs.org/dist/v22.23.1/node-v22.23.1-linux-x64.tar.xz
-      - on arm64 to arm64: https://nodejs.org/dist/v22.23.1/node-v22.23.1-linux-arm64.tar.xz
+    plugin: nil
+    build-packages:
+      - curl
+      - xz-utils
     override-build: |
-      cd "${CRAFT_PART_SRC}"/node-v*/
-      cp -r bin/* /usr/local/bin/
-      cp -r lib/node_modules /usr/local/lib/
+      case "$CRAFT_ARCH_BUILD_FOR" in
+        amd64)
+          NODE_URL="https://nodejs.org/dist/v22.23.1/node-v22.23.1-linux-x64.tar.xz"
+          ;;
+        arm64)
+          NODE_URL="https://nodejs.org/dist/v22.23.1/node-v22.23.1-linux-arm64.tar.xz"
+          ;;
+      esac
+      echo "Downloading Node.js from $NODE_URL"
+      curl -fsSL "$NODE_URL" -o /tmp/node.tar.xz
+      tar -xf /tmp/node.tar.xz -C /tmp
+      echo "Installing Node.js to /usr/local"
+      cp -r /tmp/node-v*/bin/* /usr/local/bin/
+      cp -r /tmp/node-v*/lib/node_modules /usr/local/lib/
+      rm -f /tmp/node.tar.xz
 
   # ============================================================
   # Bun — used by pi's build:binary to compile the standalone binary
