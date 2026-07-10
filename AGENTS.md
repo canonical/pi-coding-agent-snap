@@ -24,7 +24,7 @@ The snap reuses pi's existing `build:binary` npm script rather than custom build
 |---|---|
 | `snap/snapcraft.yaml` | Snap build definition with 5 parts |
 | `snap/local/pi.wrapper` | Wrapper that unsets `SNAP_*` env vars |
-| `snap/local/pi.completion` | Bash completion for `pi` |
+| `snap/local/pi.completion` | Bash completion for `pi` and `pi-coding-agent` |
 | `renovate.json` | Custom regex managers for version updates |
 | `spread.yaml` | Spread test backend config |
 | `tests/smoke/pi/task.yaml` | Smoke tests |

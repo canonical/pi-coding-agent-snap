@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: MIT
 # SPDX-FileCopyrightText: Canonical Ltd.
-name: pi
+name: pi-coding-agent
 base: core26
-title: Pi
+title: Pi Coding Agent
 summary: Minimal extensible coding agent for the terminal
 description: |
   Pi is a minimal terminal coding harness. Adapt pi to your workflows,
@@ -38,6 +38,9 @@ platforms:
     build-for: [arm64]
 
 apps:
+  pi-coding-agent:
+    command: bin/pi.wrapper
+    completer: usr/share/bash-completion/completions/pi-coding-agent.completion
   pi:
     command: bin/pi.wrapper
     completer: usr/share/bash-completion/completions/pi.completion
@@ -228,7 +231,9 @@ parts:
     plugin: nil
     source: snap/local
     override-build: |
-      install -Dm644 "$CRAFT_PART_SRC"/pi.completion \
-        "$CRAFT_PART_INSTALL"/usr/share/bash-completion/completions/pi.completion
       install -Dm755 "$CRAFT_PART_SRC"/pi.wrapper \
         "$CRAFT_PART_INSTALL"/bin/pi.wrapper
+      install -Dm644 "$CRAFT_PART_SRC"/pi.completion \
+        "$CRAFT_PART_INSTALL"/usr/share/bash-completion/completions/pi.completion
+      install -Dm644 "$CRAFT_PART_SRC"/pi.completion \
+        "$CRAFT_PART_INSTALL"/usr/share/bash-completion/completions/pi-coding-agent.completion

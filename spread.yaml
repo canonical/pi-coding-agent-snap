@@ -35,7 +35,7 @@ path: /root/pi-coding-agent-snap
 
 prepare: |
     # Install the snap that was copied into the test environment.
-    snap install "$(ls ./pi_*.snap | sort -r | head -n 1)" --dangerous --classic
+    snap install "$(ls ./pi-coding-agent_*.snap | sort -r | head -n 1)" --dangerous --classic
 
 debug-each: |
     echo "Kernel and architecture:"
@@ -49,4 +49,4 @@ debug-each: |
 
 suites:
     tests/smoke/:
-        summary: Smoke tests for the pi snap
+        summary: Smoke tests for the pi-coding-agent snap

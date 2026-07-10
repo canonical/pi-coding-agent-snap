@@ -123,10 +123,13 @@ sudo snap install snapcraft --classic
 snapcraft pack -v
 
 # Install locally
-sudo snap install --classic --dangerous ./pi_*.snap
+sudo snap install --classic --dangerous ./pi-coding-agent_*.snap
 
-# Run
-pi
+# Run (default app)
+pi-coding-agent
+
+# Or via the alias target (before alias is requested)
+pi-coding-agent.pi
 ```
 
 ## Testing with spread

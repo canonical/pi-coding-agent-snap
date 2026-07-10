@@ -1,6 +1,8 @@
 # Publishing
 
-This snap is published to the Snap Store under the name `pi`.
+This snap is published to the Snap Store under the name `pi-coding-agent`.
+After installation, the alias `pi` → `pi-coding-agent.pi` needs to be
+requested on the Snap Store forum.
 
 ## CI/CD publishing
 
@@ -13,19 +15,19 @@ The CI pipeline in `.github/workflows/build.yml` publishes automatically:
 
 ### Setting up store credentials
 
-1. Create a Snap Store account and register the `pi` snap name.
+1. Create a Snap Store account and register the `pi-coding-agent` snap name.
 2. Generate store credentials locally:
 
 ```bash
 snapcraft export-login \
-  --snaps=pi \
+  --snaps=pi-coding-agent \
   --channels=latest/edge,latest/candidate,latest/stable \
   --acls=package_upload,package_release \
-  pi.credentials
+  pi-coding-agent.credentials
 ```
 
-3. Add the contents of `pi.credentials` as a GitHub Actions secret named
-   `SNAPCRAFT_STORE_CREDENTIALS` in each environment:
+3. Add the contents of `pi-coding-agent.credentials` as a GitHub Actions
+   secret named `SNAPCRAFT_STORE_CREDENTIALS` in each environment:
    - `latest/edge` — branch builds
    - `latest/candidate` — tag builds (release candidates)
    - `latest/stable` — promotions
@@ -36,13 +38,13 @@ snapcraft export-login \
 
 ```bash
 snapcraft pack -v
-snapcraft upload --release latest/edge pi_*.snap
+snapcraft upload --release latest/edge pi-coding-agent_*.snap
 ```
 
 ### Promote a channel
 
 ```bash
-snapcraft promote --from-channel=latest/candidate --to-channel=latest/stable pi
+snapcraft promote --from-channel=latest/candidate --to-channel=latest/stable pi-coding-agent
 ```
 
 Or use the `snapcraft promote` GitHub Actions workflow (manual trigger).

@@ -1,17 +1,20 @@
 # SPDX-FileCopyrightText: Canonical Ltd.
 # SPDX-License-Identifier: MIT
 
-summary: Smoke test for the pi snap
+summary: Smoke test for the pi-coding-agent snap
 details: |
-    This test verifies that the pi snap is properly installed,
+    This test verifies that the pi-coding-agent snap is properly installed,
     launches without crashing, and prints help output.
+    Tests both the default app (pi-coding-agent) and the pi alias target.
 
 execute: |
     # Verify the snap is installed.
-    snap list | MATCH "pi"
+    snap list | MATCH "pi-coding-agent"
 
-    # Run pi and check help output.
-    snap run pi --help 2>&1 | MATCH "pi"
+    # Test the default app (pi-coding-agent).
+    snap run pi-coding-agent --help 2>&1 | MATCH "pi"
+    snap run pi-coding-agent --version 2>&1 | MATCH "^[0-9]+\.[0-9]+\.[0-9]+"
 
-    # Verify pi --version works (outputs a version number).
-    snap run pi --version 2>&1 | MATCH "^[0-9]+\.[0-9]+\.[0-9]+"
+    # Test the pi alias target (pi-coding-agent.pi).
+    snap run pi-coding-agent.pi --help 2>&1 | MATCH "pi"
+    snap run pi-coding-agent.pi --version 2>&1 | MATCH "^[0-9]+\.[0-9]+\.[0-9]+"
