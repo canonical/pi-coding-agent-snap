@@ -4,6 +4,12 @@ This repository contains snap packaging for the [pi coding agent](https://github
 
 The snap packaging is modeled after [opencode-snap](https://github.com/canonical/opencode-snap) and maintained separately from the upstream pi repository.
 
+The snap is named **`pi-coding-agent`** with two apps:
+- `pi-coding-agent` — default app (runs as `pi-coding-agent`)
+- `pi` — alias target (runs as `pi-coding-agent.pi`; an alias from `pi` can be requested on the Snap Store forum)
+
+After the alias is granted, users can run just `pi`.
+
 ## What is pi?
 
 Pi is a minimal, extensible terminal coding agent. It gives LLMs four core tools — `read`, `write`, `edit`, and `bash` — and lets you extend it with TypeScript extensions, skills, prompt templates, themes, and shareable pi packages.
@@ -34,18 +40,18 @@ The snap reuses pi's existing [`build:binary`](https://github.com/earendil-works
    - `bun build --compile` → produces standalone `dist/pi` binary
    - `copy-binary-assets` → copies package.json, README, docs, examples, wasm, themes, export templates
 6. **Install binary + assets** into `$SNAP/bin/` — this matches pi's `getPackageDir()` which resolves `dirname(process.execPath)` for Bun compiled binaries
-7. **Build `wl-clipboard`** from source for Wayland clipboard support
+7. **Install `wl-clipboard`** from Ubuntu package via `stage-packages` for Wayland clipboard support
 8. **Install wrapper script** that unsets `SNAP_*` env vars before exec
 
 ### Parts in snapcraft.yaml
 
 | Part | Plugin | What it does |
 |---|---|---|
-| `nodejs` | `dump` | Download and extract Node.js 22.x prebuilt binary |
-| `bun` | `dump` | Download Bun v1.3.14 binary (same URL pattern as opencode) |
+| `nodejs` | `nil` | Download and extract Node.js 22.x prebuilt binary |
+| `bun` | `dump` | Download Bun v1.3.14 binary |
 | `pi-build` | `nil` | Clone pi source, `npm ci`, install clipboards, run `build:binary`, install |
-| `wl-clipboard` | `meson` | Build wl-clipboard v2.3.0 from source for Wayland clipboard |
-| `pi-configuration` | `nil` | Install wrapper script and bash completion |
+| `wl-clipboard` | `nil` | Stage-package from Ubuntu for Wayland clipboard |
+| `pi-configuration` | `nil` | Install wrapper script and bash completion files |
 
 ### Clipboard strategy
 
@@ -57,7 +63,7 @@ Pi's clipboard logic differs by display server — so we need **both** mechanism
 | **X11** | `xclip` / `xsel` (native addon skipped) | `@mariozechner/clipboard` → `xclip` |
 
 - `@mariozechner/clipboard-linux-$ARCH-gnu` is installed next to the binary and handles X11 image reading
-- `wl-clipboard` (from source) provides `wl-copy`/`wl-paste` for Wayland clipboard, matching the opencode-snap approach
+- `wl-clipboard` (Ubuntu package via `stage-packages`) provides `wl-copy`/`wl-paste` for Wayland clipboard
 
 ### Runtime assets included
 

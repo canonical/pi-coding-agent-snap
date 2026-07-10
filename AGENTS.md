@@ -15,7 +15,7 @@ The snap reuses pi's existing `build:binary` npm script rather than custom build
 4. Install platform-specific clipboard native binding
 5. `npm run build:binary` in `packages/coding-agent/` (builds 4 packages + bun compile)
 6. Install binary + assets into `$SNAP/bin/` (matches pi's `getPackageDir()` resolution)
-7. Build `wl-clipboard` from source for Wayland clipboard support
+7. Install `wl-clipboard` via `stage-packages` from Ubuntu for Wayland clipboard support
 8. Install wrapper script + bash completion
 
 ## Key files
