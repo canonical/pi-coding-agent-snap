@@ -102,18 +102,26 @@ pi-coding-agent-snap/
 │       └── pi/
 │           └── task.yaml           # Basic smoke test
 ├── publishing/
-│   └── README.md                   # Publishing documentation
+│   ├── README.md                   # Publishing documentation
+│   ├── export-edge-credentials.sh      # Export latest/edge store token
+│   ├── export-candidate-credentials.sh # Export latest/candidate store token
+│   ├── export-stable-credentials.sh    # Export latest/stable store token
+│   └── .gitignore                  # Ignore exported credentials
 ├── .github/
 │   ├── actions/
 │   │   └── install-cached-snap/    # Snap caching action
 │   └── workflows/
-│       ├── build.yml               # CI entry point (push/PR/tag)
-│       ├── snapcraft-pack.yml      # Reusable build workflow
+│       ├── build.yml               # CI entry point (push/PR/tag) → tasteful-crafts
+│       ├── tasteful-crafts.yml      # Reusable build-test-publish orchestrator
+│       ├── snapcraft-pack.yml      # Reusable build workflow (per arch)
 │       ├── snapcraft-upload.yml    # Store upload workflow
-│       ├── snapcraft-promote.yml   # Channel promotion
-│       └── release.yml             # Release creation
+│       ├── snapcraft-promote.yml   # Channel promotion (workflow_dispatch)
+│       ├── spread.yml              # Reusable image-garden spread runner
+│       └── release.yml             # Release creation from Renovate PRs
 ├── renovate.json                    # Dependency update configuration
 ├── spread.yaml                      # Spread test backend config
+├── .image-garden.mk                 # image-garden cloud-init templates (core26)
+├── .gitignore                       # Ignore build artifacts (*.snap, *.comp)
 ├── AGENTS.md                        # Agent instructions for this repo
 ├── README.md                        # This file
 └── LICENSE                          # MIT AND Apache-2.0

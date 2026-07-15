@@ -26,8 +26,20 @@ The snap reuses pi's existing `build:binary` npm script rather than custom build
 | `snap/local/pi.wrapper` | Wrapper that unsets `SNAP_*` env vars |
 | `snap/local/pi.completion` | Bash completion for `pi` and `pi-coding-agent` |
 | `renovate.json` | Custom regex managers for version updates |
-| `spread.yaml` | Spread test backend config |
+| `spread.yaml` | Spread test backend config (image-garden adhoc backend) |
+| `.image-garden.mk` | image-garden cloud-init user-data templates (core26) |
 | `tests/smoke/pi/task.yaml` | Smoke tests |
+| `.github/workflows/build.yml` | CI entry point; delegates to `tasteful-crafts.yml` |
+| `.github/workflows/tasteful-crafts.yml` | Reusable build → spread → publish orchestrator |
+| `.github/workflows/snapcraft-pack.yml` | Per-architecture snap build (reusable, uses LXD) |
+| `.github/workflows/snapcraft-upload.yml` | Store upload (reusable) |
+| `.github/workflows/snapcraft-promote.yml` | Channel promotion (`workflow_dispatch`) |
+| `.github/workflows/spread.yml` | Reusable image-garden spread runner |
+| `.github/workflows/release.yml` | Create Git tags + GitHub releases from Renovate PRs |
+| `.github/actions/install-cached-snap/` | Composite action: install a snap with caching |
+| `publishing/export-*-credentials.sh` | Export per-channel Snap Store credentials |
+| `publishing/README.md` | Publishing docs (credentials, manual + CI flow) |
+| `.gitignore` | Ignore build artifacts (`*.snap`, `*.comp`, `*.spread-reuse.yaml`) |
 
 ## Architecture
 
@@ -35,6 +47,11 @@ The snap reuses pi's existing `build:binary` npm script rather than custom build
 - **Confinement**: `classic` (needs unrestricted filesystem access)
 - **Platforms**: amd64, arm64
 - **Binary**: standalone Bun-compiled executable (no Node.js needed at runtime)
+- **CI pipeline**: `build.yml` → `tasteful-crafts.yml` orchestrates snap build
+  (LXD), image-garden spread integration tests across Ubuntu/Debian cloud
+  systems, and Snap Store upload to `latest/edge` (branch) or
+  `latest/candidate` (tag); `latest/stable` is reached via manual
+  `snapcraft-promote`.
 
 ## Version management
 
