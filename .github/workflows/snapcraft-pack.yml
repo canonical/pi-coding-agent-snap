@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Canonical Ltd.
 name: snapcraft pack
 
@@ -11,32 +11,32 @@ on:
         required: true
       cache-host-snaps:
         type: boolean
-        description: "Whether to cache host snaps during installation"
+        description: "Whether to cache host snaps (snapd, core26) during installation"
         required: false
         default: true
       snapd-channel:
         type: string
-        description: "Snap store channel for snapd snap"
+        description: "Snap store channel for snapd snap (e.g., latest/stable, latest/edge)"
         required: false
         default: latest/stable
       core26-channel:
         type: string
-        description: "Snap store channel for core26 snap"
+        description: "Snap store channel for core26 snap (e.g., latest/stable, latest/edge)"
         required: false
         default: latest/stable
       lxd-channel:
         type: string
-        description: "Snap store channel for LXD snap"
+        description: "Snap store channel for LXD snap (e.g., latest/stable, latest/edge)"
         required: false
         default: latest/stable
       snapcraft-channel:
         type: string
-        description: "Snap store channel for Snapcraft snap"
+        description: "Snap store channel for Snapcraft snap (e.g., latest/stable, latest/edge)"
         required: false
         default: latest/stable
       runs-on:
         type: string
-        description: "The type of machine to run on"
+        description: "The type of machine to run on (e.g., ubuntu-24.04)"
         required: false
         default: ubuntu-24.04
     outputs:
@@ -46,6 +46,9 @@ on:
       arch:
         description: "Architecture the snap was built for"
         value: ${{ jobs.pack.outputs.arch }}
+      comp-filenames:
+        description: "Comma-separated list of component filenames"
+        value: ${{ jobs.pack.outputs.comp-filenames }}
 
 jobs:
   pack:
@@ -53,6 +56,7 @@ jobs:
     runs-on: ${{ inputs.runs-on }}
     outputs:
       snap-filename: ${{ steps.snap-output.outputs.snap-filename }}
+      comp-filenames: ${{ steps.comp-output.outputs.comp-filenames }}
       arch: ${{ steps.arch.outputs.ARCH }}
     steps:
       - name: Checkout code
@@ -115,6 +119,24 @@ jobs:
           echo "snap-filename=${SNAP_FILE}" >> $GITHUB_OUTPUT
           echo "Snap file: ${SNAP_FILE}"
 
+      - name: Capture component outputs
+        id: comp-output
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=(*.comp)
+          if [ ${#files[@]} -gt 0 ]; then
+            COMP_FILES=$(IFS=,; echo "${files[*]}")
+          else
+            COMP_FILES=""
+          fi
+          echo "comp-filenames=${COMP_FILES}" >> $GITHUB_OUTPUT
+          if [ -n "${COMP_FILES}" ]; then
+            echo "Component files: ${COMP_FILES}"
+          else
+            echo "No component files generated"
+          fi
+
       - name: Organize artifacts into per-architecture directory
         id: arch-dir
         shell: bash
@@ -134,9 +156,12 @@ jobs:
               ;;
           esac
           echo "Architecture: $ARCH (from $SNAP_FILE)"
+          # Create architecture-specific directory and move artifacts into it
           mkdir -p "$ARCH"
-          mv *.snap "$ARCH/"
+          mv *.snap "$ARCH/" 2>/dev/null || true
+          mv *.comp "$ARCH/" 2>/dev/null || true
           echo "arch-dir=$ARCH" >> $GITHUB_OUTPUT
+          echo "Moved artifacts to $ARCH/"
           ls -la "$ARCH/"
 
       - name: Upload snap artifact
@@ -145,6 +170,7 @@ jobs:
           name: snap-${{ steps.arch.outputs.ARCH }}
           path: |
             ${{ steps.arch-dir.outputs.arch-dir }}/*.snap
+            ${{ steps.arch-dir.outputs.arch-dir }}/*.comp
           retention-days: 7
 
       - name: Upload snapcraft logs on failure
