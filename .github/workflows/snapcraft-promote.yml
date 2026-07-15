@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Canonical Ltd.
 name: snapcraft promote
 
@@ -64,6 +64,11 @@ jobs:
 
       - name: Promote ${{ inputs.source-channel }} into ${{ inputs.target-channel }}
         env:
+          # Create a GitHub environment whose name matches the target channel
+          # (for example latest/stable) and add SNAPCRAFT_STORE_CREDENTIALS
+          # there. Export the secret value locally with:
+          # snapcraft export-login --snaps=<snap-name> --channels=<target-channel> \
+          #   --acls=package_access,package_release <token-name>
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
           SNAP_NAME: ${{ steps.snap-name.outputs.snap-name }}
         shell: bash
