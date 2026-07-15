@@ -1,5 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Canonical Ltd.
-# SPDX-License-Identifier: MIT
 
 project: pi-coding-agent-snap
 
@@ -18,6 +18,8 @@ backends:
             fi
             image-garden discard "$SPREAD_SYSTEM_ADDRESS"
         systems:
+            # TODO: add arm64 / fedora-cloud-* / opensuse systems once
+            # .image-garden.mk templates and runners are ready.
             - ubuntu-cloud-26.04:
                   username: ubuntu
                   password: ubuntu
