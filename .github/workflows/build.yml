@@ -42,5 +42,6 @@ jobs:
     with:
       snapstore-channel: ${{ github.ref_type == 'tag' && 'latest/candidate' || vars.SNAPCRAFT_CHANNEL || 'latest/edge' }}
       skip-spread-tests: ${{ inputs.skip-spread-tests || false }}
+      spread-tasks: "tests/smoke/..."
     secrets:
       publish-credentials: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
