@@ -116,7 +116,7 @@ pi-coding-agent-snap/
 ├── spread.yaml                      # Spread test backend config
 ├── AGENTS.md                        # Agent instructions for this repo
 ├── README.md                        # This file
-└── LICENSE                          # MIT (same as upstream)
+└── LICENSE                          # MIT AND Apache-2.0
 ```
 
 ## Building
@@ -157,7 +157,7 @@ See [AGENTS.md](AGENTS.md) for project-specific rules. The snap packaging is mai
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Same license as the upstream pi project.
+MIT AND Apache-2.0 — see [LICENSE](LICENSE). The bundled pi binary is MIT (upstream); the snap packaging files in this repository are Apache-2.0 (Canonical Ltd.).
 
 ## See also
 

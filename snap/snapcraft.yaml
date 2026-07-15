@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Canonical Ltd.
 name: pi-coding-agent
 base: core26
@@ -18,7 +18,7 @@ description: |
 
   The snap packaging is maintained separately at
   https://github.com/canonical/pi-coding-agent-snap
-license: MIT
+license: MIT AND Apache-2.0
 contact: https://github.com/canonical/pi-coding-agent-snap/issues
 website: https://pi.dev
 source-code: https://github.com/earendil-works/pi

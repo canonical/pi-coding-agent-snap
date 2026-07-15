@@ -54,4 +54,4 @@ Pi needs both clipboard mechanisms:
 
 ## License
 
-MIT (same as upstream pi).
+MIT AND Apache-2.0. The bundled pi binary is MIT (upstream); the snap packaging files in this repository are Apache-2.0 (Canonical Ltd.).
