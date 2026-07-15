@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Canonical Ltd.
 name: release
 
@@ -48,7 +48,7 @@ jobs:
             core.setOutput("tag", version);
             core.setOutput("target", target);
 
-      - name: Validate release tag against packaged version
+      - name: Validate release tag against packaged and upstream versions
         uses: actions/github-script@v9
         env:
           RELEASE_TAG: ${{ steps.context.outputs.tag }}
@@ -59,6 +59,22 @@ jobs:
             const repo = context.repo.repo;
             const releaseTag = process.env.RELEASE_TAG;
             const targetRef = process.env.TARGET_REF;
+
+            function parseSemver(tag) {
+              const m = /^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(tag || "");
+              if (!m) return null;
+              return {
+                major: Number(m[1]),
+                minor: Number(m[2]),
+                patch: Number(m[3]),
+              };
+            }
+
+            function compareSemver(a, b) {
+              if (a.major !== b.major) return a.major - b.major;
+              if (a.minor !== b.minor) return a.minor - b.minor;
+              return a.patch - b.patch;
+            }
 
             const content = await github.rest.repos.getContent({
               owner,
@@ -85,12 +101,32 @@ jobs:
 
             const packagedTag = uniquePackagedTags[0];
 
+            const upstreamLatest = await github.rest.repos.getLatestRelease({
+              owner: "earendil-works",
+              repo: "pi",
+            });
+            const upstreamLatestTag = upstreamLatest.data.tag_name;
+
+            const releaseParsed = parseSemver(releaseTag);
+            const packagedParsed = parseSemver(packagedTag);
+            const upstreamParsed = parseSemver(upstreamLatestTag);
+
+            if (!releaseParsed || !packagedParsed || !upstreamParsed) {
+              core.setFailed(`Could not parse one of the tags as semver: release=${releaseTag}, packaged=${packagedTag}, upstream=${upstreamLatestTag}.`);
+              return;
+            }
+
             if (releaseTag !== packagedTag) {
               core.setFailed(`Release tag ${releaseTag} must exactly match packaged pi source-tag ${packagedTag} from snap/snapcraft.yaml.`);
               return;
             }
 
-            core.info(`Validated release tag ${releaseTag} against packaged tag ${packagedTag}.`);
+            if (compareSemver(releaseParsed, upstreamParsed) > 0) {
+              core.setFailed(`Release tag ${releaseTag} must not be newer than upstream pi latest release ${upstreamLatestTag}.`);
+              return;
+            }
+
+            core.info(`Validated release tag ${releaseTag} against packaged tag ${packagedTag} and upstream latest ${upstreamLatestTag}.`);
 
       - name: Create tag from target branch
         if: ${{ github.event_name == 'workflow_dispatch' }}
@@ -141,7 +177,11 @@ jobs:
             function parseSemver(tag) {
               const m = /^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(tag);
               if (!m) return null;
-              return { major: Number(m[1]), minor: Number(m[2]), patch: Number(m[3]) };
+              return {
+                major: Number(m[1]),
+                minor: Number(m[2]),
+                patch: Number(m[3]),
+              };
             }
 
             function compareSemver(a, b) {
@@ -150,9 +190,33 @@ jobs:
               return a.patch - b.patch;
             }
 
+            function extractNotes(prBody) {
+              if (!prBody) return null;
+
+              const headingMatch = /(?:^|\n)#{2,6}\s*(?:Release Notes?|Changelog)\s*\n/i.exec(prBody);
+              if (!headingMatch || headingMatch.index === undefined) return null;
+
+              const start = headingMatch.index + headingMatch[0].length;
+              const rest = prBody.slice(start);
+
+              const delimiterIndex = rest.search(/\n---\n/);
+              const section = delimiterIndex >= 0 ? rest.slice(0, delimiterIndex) : rest;
+
+              const cleaned = section
+                .replace(/<details>/gi, "")
+                .replace(/<\/details>/gi, "")
+                .replace(/<summary>([\s\S]*?)<\/summary>/gi, (_m, title) => `#### ${String(title).trim()}`)
+                .replace(/\n{3,}/g, "\n\n")
+                .trim();
+
+              return cleaned.length > 0 ? cleaned : null;
+            }
+
             async function listAllTags() {
               return github.paginate(github.rest.repos.listTags, {
-                owner, repo, per_page: 100,
+                owner,
+                repo,
+                per_page: 100,
               });
             }
 
@@ -164,26 +228,34 @@ jobs:
 
             const currentParsed = parseSemver(currentTag);
             const previous = currentParsed
-              ? semverTags.filter((t) => t.name !== currentTag).filter((t) => compareSemver(t.parsed, currentParsed) < 0).at(-1)
+              ? semverTags
+                .filter((t) => t.name !== currentTag)
+                .filter((t) => compareSemver(t.parsed, currentParsed) < 0)
+                .at(-1)
               : semverTags.filter((t) => t.name !== currentTag).at(-1);
             const previousTag = previous ? previous.name : null;
 
             core.info(previousTag
               ? `Using previous tag ${previousTag}`
-              : "No previous semver tag found.");
+              : "No previous semver tag found; release notes will include only a fallback message.");
 
             const prMap = new Map();
 
             if (previousTag) {
               const comparison = await github.rest.repos.compareCommitsWithBasehead({
-                owner, repo,
+                owner,
+                repo,
                 basehead: `${previousTag}...${currentTag}`,
               });
 
               for (const commit of comparison.data.commits) {
                 const pulls = await github.rest.repos.listPullRequestsAssociatedWithCommit({
-                  owner, repo, commit_sha: commit.sha, per_page: 100,
+                  owner,
+                  repo,
+                  commit_sha: commit.sha,
+                  per_page: 100,
                 });
+
                 for (const pr of pulls.data) {
                   if (!pr.merged_at) continue;
                   if (pr.user?.login !== "renovate[bot]") continue;
@@ -192,9 +264,9 @@ jobs:
               }
             }
 
-            const renovatePrs = [...prMap.values()].sort((a, b) =>
-              new Date(a.merged_at).getTime() - new Date(b.merged_at).getTime()
-            );
+            const renovatePrs = [...prMap.values()].sort((a, b) => {
+              return new Date(a.merged_at).getTime() - new Date(b.merged_at).getTime();
+            });
 
             const lines = [];
             lines.push("## Renovate updates");
@@ -202,11 +274,21 @@ jobs:
 
             if (renovatePrs.length === 0) {
               lines.push("No Renovate pull requests were detected for this release range.");
+              lines.push("");
             }
 
             for (const pr of renovatePrs) {
               lines.push(`### #${pr.number} ${pr.title}`);
               lines.push(`- PR: ${pr.html_url}`);
+
+              const extracted = extractNotes(pr.body || "");
+              if (extracted) {
+                lines.push("");
+                lines.push(extracted);
+              } else {
+                lines.push("- No changelog section found in PR body.");
+              }
+
               lines.push("");
             }
 
@@ -214,19 +296,37 @@ jobs:
 
             try {
               const existing = await github.rest.repos.getReleaseByTag({
-                owner, repo, tag: currentTag,
+                owner,
+                repo,
+                tag: currentTag,
               });
+
               await github.rest.repos.updateRelease({
-                owner, repo, release_id: existing.data.id,
-                tag_name: currentTag, name: currentTag, body,
-                draft: false, prerelease: false,
+                owner,
+                repo,
+                release_id: existing.data.id,
+                tag_name: currentTag,
+                name: currentTag,
+                body,
+                draft: false,
+                prerelease: false,
               });
+
               core.info(`Updated release for ${currentTag}.`);
             } catch (error) {
-              if (error.status !== 404) throw error;
+              if (error.status !== 404) {
+                throw error;
+              }
+
               await github.rest.repos.createRelease({
-                owner, repo, tag_name: currentTag, name: currentTag, body,
-                draft: false, prerelease: false,
+                owner,
+                repo,
+                tag_name: currentTag,
+                name: currentTag,
+                body,
+                draft: false,
+                prerelease: false,
               });
+
               core.info(`Created release for ${currentTag}.`);
             }
