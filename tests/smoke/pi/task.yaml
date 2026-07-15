@@ -1,5 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Canonical Ltd.
-# SPDX-License-Identifier: MIT
 
 summary: Smoke test for the pi-coding-agent snap
 details: |
@@ -13,8 +13,8 @@ execute: |
 
     # Test the default app (pi-coding-agent).
     snap run pi-coding-agent --help 2>&1 | MATCH "pi"
-    snap run pi-coding-agent --version 2>&1 | MATCH "^[0-9]+\.[0-9]+\.[0-9]+"
+    snap run pi-coding-agent --version 2>&1 | MATCH "0.80.6"
 
     # Test the pi alias target (pi-coding-agent.pi).
     snap run pi-coding-agent.pi --help 2>&1 | MATCH "pi"
-    snap run pi-coding-agent.pi --version 2>&1 | MATCH "^[0-9]+\.[0-9]+\.[0-9]+"
+    snap run pi-coding-agent.pi --version 2>&1 | MATCH "0.80.6"
