@@ -1,62 +1,80 @@
-# Publishing
+## CI
 
-This snap is published to the Snap Store under the name `pi-coding-agent`.
-After installation, the alias `pi` → `pi-coding-agent.pi` needs to be
-requested on the Snap Store forum.
+Builds are triggered on push to `main`, `master`, `develop`, and on tags (`v*`).
 
-## CI/CD publishing
+- Branch builds publish to `latest/edge`
+- Tag builds publish to `latest/candidate`
 
-The CI pipeline in `.github/workflows/build.yml` publishes automatically:
+The CI builds for both amd64 and arm64 in parallel using GitHub-hosted runners
+(`ubuntu-24.04` and `ubuntu-24.04-arm`).
 
-| Event | Channel | Requires |
-|---|---|---|
-| Push to `main` | `latest/edge` | `SNAPCRAFT_STORE_CREDENTIALS` secret |
-| Tag push `v*` | `latest/candidate` | `SNAPCRAFT_STORE_CREDENTIALS` secret |
+## Managing Snap Store credentials
 
-### Setting up store credentials
+This project uses three credential files for different stages of the release
+pipeline. Each file is a snapcraft login token scoped to a specific channel
+and set of ACLs.
 
-1. Create a Snap Store account and register the `pi-coding-agent` snap name.
-2. Generate store credentials locally:
+### Creating credentials
 
-```bash
-snapcraft export-login \
-  --snaps=pi-coding-agent \
-  --channels=latest/edge,latest/candidate,latest/stable \
-  --acls=package_upload,package_release \
-  pi-coding-agent.credentials
-```
+Run the corresponding export script on a machine where `snapcraft` is
+installed and you are logged in (`snapcraft login`):
 
-3. Add the contents of `pi-coding-agent.credentials` as a GitHub Actions
-   secret named `SNAPCRAFT_STORE_CREDENTIALS` in each environment:
-   - `latest/edge` — branch builds
-   - `latest/candidate` — tag builds (release candidates)
-   - `latest/stable` — promotions
+| Script                            | Output file             | Channels           | ACLs                              | Purpose                          |
+| --------------------------------- | ----------------------- | ------------------ | --------------------------------- | -------------------------------- |
+| `export-edge-credentials.sh`      | `edge-credentials`      | `latest/edge`      | `package_upload, package_release` | Upload builds from branches      |
+| `export-candidate-credentials.sh` | `candidate-credentials` | `latest/candidate` | `package_upload, package_release` | Upload builds from tags          |
+| `export-stable-credentials.sh`    | `stable-credentials`    | `latest/stable`    | `package_access, package_release` | Promote from candidate to stable |
+
+### Storing credentials in GitHub
+
+Save the contents of each credential file as a secret named
+`SNAPCRAFT_STORE_CREDENTIALS` in the matching GitHub environment:
+
+- `edge-credentials` → `latest/edge` environment
+- `candidate-credentials` → `latest/candidate` environment
+- `stable-credentials` → `latest/stable` environment
+
+These environments can also have approval rules attached so that publishing
+or promotion requires manual review.
 
 ## Manual publishing
 
-### Build and publish a revision
+To build and upload a revision directly (from a snapcraft-authenticated
+machine):
 
 ```bash
 snapcraft pack -v
 snapcraft upload --release latest/edge pi-coding-agent_*.snap
 ```
 
-### Promote a channel
+To promote a revision between channels:
 
 ```bash
 snapcraft promote --from-channel=latest/candidate --to-channel=latest/stable pi-coding-agent
 ```
 
-Or use the `snapcraft promote` GitHub Actions workflow (manual trigger).
+Or trigger the `snapcraft promote` GitHub Actions workflow (manual
+`workflow_dispatch` with `source-channel` and `target-channel` inputs).
 
-## Release workflow
+## GitHub Releases from Renovate PRs
 
-1. Wait for Renovate to open a PR updating `source-tag` in `snap/snapcraft.yaml`
-   (or manually update it to the desired upstream pi version).
-2. Merge the PR to `main`.
-3. Run the `release` GitHub Actions workflow with the matching version tag
-   (e.g., `v0.80.6`). The workflow validates that the tag matches the
-   `source-tag` in `snap/snapcraft.yaml`, then creates a GitHub release.
-4. The tag push triggers `build.yml`, which builds, tests, and publishes to
-   `latest/candidate`.
-5. After verification, use `snapcraft promote` to move to `latest/stable`.
+Use `.github/workflows/release.yml` to create Git tags and GitHub releases with
+release notes aggregated from merged Renovate PRs.
+
+- Trigger manually from **Actions -> release -> Run workflow**
+  - `version`: tag to create (for example `v0.80.6`)
+  - `target`: branch to tag from (defaults to `main`)
+- You can also push a tag manually (`git tag vX.Y.Z && git push origin vX.Y.Z`);
+  the workflow runs on `v*` tags and will create or update the matching release.
+
+Release notes behavior:
+
+- Only merged PRs authored by `renovate[bot]` are included
+- The workflow looks for a `Release Notes` or `Changelog` section in each PR body
+- Nested Renovate `<details>` sections are flattened into readable markdown
+- If no section is found, it falls back to PR title and link
+
+Tag safety checks:
+
+- The release tag must exactly match the packaged pi `source-tag` in `snap/snapcraft.yaml`
+- The release tag must not be newer than the latest upstream `earendil-works/pi` release
