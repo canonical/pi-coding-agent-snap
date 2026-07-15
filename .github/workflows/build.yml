@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Canonical Ltd.
 name: Build
 
@@ -9,6 +9,7 @@ on:
     paths:
       - 'snap/snapcraft.yaml'
       - 'snap/local/**'
+      - '.image-garden.mk'
       - 'spread.yaml'
       - 'tests/**'
   pull_request:
@@ -16,13 +17,14 @@ on:
     paths:
       - 'snap/snapcraft.yaml'
       - 'snap/local/**'
+      - '.image-garden.mk'
       - 'spread.yaml'
       - 'tests/**'
   workflow_dispatch:
     inputs:
       skip-spread-tests:
         type: boolean
-        description: "Skip integration tests (spread) and publish directly"
+        description: "Skip integration tests (spread) and publish directly. Requires manual approval gate."
         default: false
         required: false
 
@@ -31,63 +33,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  snapcraft-pack-amd64:
-    name: snapcraft (amd64)
-    uses: ./.github/workflows/snapcraft-pack.yml
+  snap-build-test-publish:
+    uses: ./.github/workflows/tasteful-crafts.yml
+    # Branch builds publish to vars.SNAPCRAFT_CHANNEL when set, otherwise to
+    # latest/edge. Tag builds publish to latest/candidate. Create matching
+    # GitHub environments and add an environment secret named
+    # SNAPCRAFT_STORE_CREDENTIALS to each one.
     with:
-      job-arch: amd64
-
-  snapcraft-pack-arm64:
-    name: snapcraft (arm64)
-    uses: ./.github/workflows/snapcraft-pack.yml
-    with:
-      job-arch: arm64
-      runs-on: ubuntu-24.04-arm
-
-  # Smoke tests run after both architectures build successfully
-  smoke-test-amd64:
-    name: smoke test (amd64)
-    needs: [snapcraft-pack-amd64]
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7.0.0
-
-      - name: Download snap artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: snap-${{ needs.snapcraft-pack-amd64.outputs.arch }}
-          path: .
-
-      - name: Install snap
-        shell: bash
-        run: |
-          SNAP_FILE=$(ls -1 *.snap | head -1)
-          echo "Installing $SNAP_FILE"
-          sudo snap install --classic --dangerous "$SNAP_FILE"
-
-      - name: Run smoke tests
-        shell: bash
-        run: |
-          # Verify the snap is installed
-          snap list | grep "pi"
-
-          # Check help output
-          snap run pi --help 2>&1 | grep -q "pi" && echo "OK: --help works"
-
-          # Check version
-          snap run pi --version 2>&1 | grep -qE "^[0-9]+\.[0-9]+\.[0-9]+" && echo "OK: --version works"
-
-  # Publish only on pushes/tags, never on pull requests
-  snapcraft-upload:
-    name: snapcraft upload
-    if: ${{ !failure() && github.event_name != 'pull_request' }}
-    needs: [snapcraft-pack-amd64, snapcraft-pack-arm64, smoke-test-amd64]
-    uses: ./.github/workflows/snapcraft-upload.yml
-    with:
-      artifact-pattern: snap-*
-      snapstore-channel: ${{ github.ref_type == 'tag' && 'latest/candidate' || 'latest/edge' }}
-      github-environment: ${{ github.ref_type == 'tag' && 'latest/candidate' || 'latest/edge' }}
-      github-deployment: true
+      snapstore-channel: ${{ github.ref_type == 'tag' && 'latest/candidate' || vars.SNAPCRAFT_CHANNEL || 'latest/edge' }}
+      skip-spread-tests: ${{ inputs.skip-spread-tests || false }}
     secrets:
       publish-credentials: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
