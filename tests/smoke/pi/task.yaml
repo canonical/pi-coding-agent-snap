@@ -13,8 +13,8 @@ execute: |
 
     # Test the default app (pi-coding-agent).
     snap run pi-coding-agent --help 2>&1 | MATCH "pi"
-    snap run pi-coding-agent --version 2>&1 | MATCH "0.80.7"
+    snap run pi-coding-agent --version 2>&1 | MATCH "0.80.10"
 
     # Test the pi alias target (pi-coding-agent.pi).
     snap run pi-coding-agent.pi --help 2>&1 | MATCH "pi"
-    snap run pi-coding-agent.pi --version 2>&1 | MATCH "0.80.7"
+    snap run pi-coding-agent.pi --version 2>&1 | MATCH "0.80.10"
