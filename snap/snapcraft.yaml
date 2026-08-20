@@ -73,13 +73,24 @@ parts:
 
   # ============================================================
   # Bun — used by pi's build:binary to compile the standalone binary
+  #
+  # `bun build --compile` embeds a copy of the Bun binary that runs the
+  # command into the produced standalone executable. Bun ships a "modern"
+  # amd64 release that requires AVX2 and a separate "-baseline" release
+  # (x86-64-v2, no AVX2) for older CPUs. Using the modern release here
+  # made the resulting `pi` binary SIGILL on pre-Haswell CPUs (Sandy
+  # Bridge / Ivy Bridge / etc. without AVX2) — see
+  # https://github.com/canonical/pi-coding-agent-snap/issues/8. Use the
+  # baseline amd64 release so the compiled `pi` binary stays compatible
+  # with all standard x86-64 hardware. arm64 has no such split (there is
+  # no "-baseline" aarch64 release) so it is unaffected.
   # ============================================================
   bun:
     after:
       - nodejs
     plugin: dump
     source:
-      - on amd64 to amd64: https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-linux-x64.zip
+      - on amd64 to amd64: https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-linux-x64-baseline.zip
       - on arm64 to arm64: https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-linux-aarch64.zip
     override-build: |
       install -Dm755 "${CRAFT_PART_SRC}"/bun-linux-*/bun /usr/local/bin/bun
