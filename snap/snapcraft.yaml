@@ -99,8 +99,6 @@ parts:
     source: https://github.com/earendil-works/pi
     source-type: git
     source-tag: v0.84.4
-    build-packages:
-      - curl
     build-environment:
       - PATH: "/usr/local/bin:${PATH}"
     override-build: |
@@ -120,13 +118,16 @@ parts:
       # ------------------------------------------------------------------
       AI_VERSION=$(node -e "console.log(require('./packages/ai/package.json').version)")
       echo "Fetching pi-ai@${AI_VERSION} npm tarball for provider model data"
-      curl -fsSL "https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-${AI_VERSION}.tgz" -o /tmp/pi-ai.tgz
-      rm -rf /tmp/pi-ai-npm
-      mkdir -p /tmp/pi-ai-npm
-      tar -xzf /tmp/pi-ai.tgz -C /tmp/pi-ai-npm
+      # Use `npm pack` rather than a raw curl so npm verifies the tarball's
+      # sha512 integrity against the registry's published dist.integrity metadata.
+      # The version stays derived from the checked-out source-tag above so it can
+      # never drift from the snap's source-tag.
+      mkdir -p /tmp/pi-ai-npm-src /tmp/pi-ai-npm
+      npm pack "@earendil-works/pi-ai@${AI_VERSION}" --pack-destination /tmp/pi-ai-npm-src
+      tar -xzf /tmp/pi-ai-npm-src/*.tgz -C /tmp/pi-ai-npm
       rm -rf packages/ai/src/providers/data
       cp -r /tmp/pi-ai-npm/package/dist/providers/data packages/ai/src/providers/data
-      rm -rf /tmp/pi-ai.tgz /tmp/pi-ai-npm
+      rm -rf /tmp/pi-ai-npm-src /tmp/pi-ai-npm
 
       # ----------------------------------------------------------
       # Install workspace dependencies (build + production deps).
