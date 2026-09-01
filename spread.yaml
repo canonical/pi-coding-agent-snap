@@ -32,6 +32,7 @@ backends:
 
 exclude:
     - ".git/*"
+    - "*.qcow2*"
 
 path: /root/pi-coding-agent-snap
 
