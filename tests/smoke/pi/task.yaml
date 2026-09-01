@@ -18,3 +18,10 @@ execute: |
     # Test the pi alias target (pi-coding-agent.pi).
     snap run pi-coding-agent.pi --help 2>&1 | MATCH "pi"
     snap run pi-coding-agent.pi --version 2>&1 | MATCH "0.84.4"
+
+    # Verify the new Node.js-runtime layout (fixes
+    # https://github.com/canonical/pi-coding-agent-snap/issues/13: the
+    # previous Bun-compiled binary hardcoded a 5-minute socket timeout).
+    /snap/pi-coding-agent/current/node/bin/node --version 2>&1 | MATCH "v22"
+    test -e /snap/pi-coding-agent/current/lib/pi/packages/coding-agent/dist/cli.js
+    test ! -e /snap/pi-coding-agent/current/bin/pi
