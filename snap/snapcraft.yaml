@@ -87,6 +87,10 @@ parts:
       mkdir -p "${CRAFT_PART_INSTALL}/node/bin"
       cp /tmp/node-v*/bin/node "${CRAFT_PART_INSTALL}/node/bin/node"
 
+      # Ship Node.js' own LICENSE alongside the bundled runtime so the snap
+      # carries the license text for the redistributed Node.js binary.
+      cp /tmp/node-v*/LICENSE "${CRAFT_PART_INSTALL}/node/LICENSE"
+
       rm -f /tmp/node.tar.xz
 
   # ============================================================
@@ -150,6 +154,29 @@ parts:
       npm prune --omit=dev --ignore-scripts
 
       # ----------------------------------------------------------
+      # The clipboard native binding (@mariozechner/clipboard-linux-*-gnu)
+      # is an optionalDependency, so npm silently skips it if the registry
+      # fetch glitches — which would ship a snap with no X11 image-paste
+      # support and no build error. Fail loudly here instead, so a missing
+      # binding aborts the build rather than degrading silently.
+      # ----------------------------------------------------------
+      case "$CRAFT_ARCH_BUILD_FOR" in
+        amd64)
+          _CLIP_NAPI_ARCH=x64
+          ;;
+        arm64)
+          _CLIP_NAPI_ARCH=arm64
+          ;;
+      esac
+      _CLIP_BINDING="node_modules/@mariozechner/clipboard-linux-${_CLIP_NAPI_ARCH}-gnu/clipboard.linux-${_CLIP_NAPI_ARCH}-gnu.node"
+      echo "Verifying clipboard native binding: $_CLIP_BINDING"
+      test -f "$_CLIP_BINDING" || {
+        echo "ERROR: clipboard native binding not found after npm prune." >&2
+        echo "       optionalDependency resolution may have failed silently." >&2
+        exit 1
+      }
+
+      # ----------------------------------------------------------
       # Derive snap version from the coding-agent package.json
       # ----------------------------------------------------------
       PI_VERSION=$(node -e "console.log(require('./packages/coding-agent/package.json').version)")
@@ -168,6 +195,10 @@ parts:
       mkdir -p "${PI_HOME}/node_modules"
       cp -a node_modules/. "${PI_HOME}/node_modules/"
       rm -rf "${PI_HOME}/node_modules/koffi"   # Windows-only clipboard helper
+
+      # Ship pi's LICENSE (MIT, copyright earendil-works) next to the
+      # bundled packages so the snap carries the upstream license text.
+      cp LICENSE "${PI_HOME}/LICENSE"
 
       for pkg in telemetry ai protocol agent tui client; do
         mkdir -p "${PI_HOME}/packages/${pkg}"

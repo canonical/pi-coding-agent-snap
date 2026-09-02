@@ -2,9 +2,14 @@ This snap is distributed under the terms of two licenses:
 
   MIT AND Apache-2.0
 
-The bundled upstream pi binary (built from
+The bundled upstream pi code (built from
 https://github.com/earendil-works/pi) is distributed under the MIT License,
 copyright earendil-works.
+
+The snap also bundles a Node.js runtime (downloaded from
+https://nodejs.org), which is distributed under the MIT License, copyright
+Node.js contributors. The Node.js license text is shipped inside the snap
+at $SNAP/node/LICENSE.
 
 The snap packaging files in this repository (snapcraft.yaml, wrappers,
 completion, workflows, publishing scripts, tests, etc.) are distributed under

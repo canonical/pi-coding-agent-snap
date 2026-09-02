@@ -87,4 +87,4 @@ Pi needs both clipboard mechanisms:
 
 ## License
 
-MIT AND Apache-2.0. The bundled pi code is MIT (upstream); the snap packaging files in this repository are Apache-2.0 (Canonical Ltd.).
+MIT AND Apache-2.0. The bundled pi code is MIT (upstream); the bundled Node.js runtime is MIT (Node.js contributors); the snap packaging files in this repository are Apache-2.0 (Canonical Ltd.).
