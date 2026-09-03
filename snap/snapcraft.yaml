@@ -211,6 +211,24 @@ parts:
         packages/coding-agent/package.json packages/coding-agent/README.md packages/coding-agent/CHANGELOG.md \
         "${PI_HOME}/packages/coding-agent/"
 
+      # ----------------------------------------------------------
+      # Strip build artifacts that are never loaded at runtime.
+      #
+      # - *.map / *.d.ts / *.d.mts / *.d.cts: source maps + type
+      #   declarations. The bundled node runtime does not enable source
+      #   maps (backtraces already resolve to the compiled .js files) and
+      #   type declarations are only needed by consumers doing their own
+      #   type-checking. Together they account for ~10 MiB of the snap.
+      # - dist/bundle/: the bundled CLI variant (created by
+      #   scripts/build-coding-agent-bundle.mjs). pi.wrapper execs
+      #   packages/coding-agent/dist/cli.js directly, so the bundled
+      #   duplicate (~1.5 MiB) is dead weight.
+      # ----------------------------------------------------------
+      find "${PI_HOME}" -type f \(
+        -name '*.map' -o -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts'
+      \) -delete
+      rm -rf "${PI_HOME}/packages/coding-agent/dist/bundle"
+
   # ============================================================
   # wl-clipboard — Wayland clipboard tools from Ubuntu package
   # Needed for clipboard support on Wayland (default display server).

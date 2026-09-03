@@ -25,7 +25,9 @@ runtime for execution:
 7. Assemble the runtime payload into `$SNAP/lib/pi/`: pruned `node_modules/`
    plus `dist/` + `package.json` + `README.md` (and docs/examples/CHANGELOG
    for coding-agent) from the workspace packages pi-coding-agent needs
-   (telemetry, ai, protocol, agent, tui, client, coding-agent)
+   (telemetry, ai, protocol, agent, tui, client, coding-agent), then strip
+   build artifacts that are never loaded at runtime (source maps, `.d.ts`
+   type declarations, and the `dist/bundle` duplicate) to keep the snap lean
 8. Bundle the Node.js runtime executable into `$SNAP/node/bin/node`;
    `pi.wrapper` execs it against `packages/coding-agent/dist/cli.js`
 9. Install `wl-clipboard` via `stage-packages` from Ubuntu for Wayland

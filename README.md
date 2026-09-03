@@ -53,7 +53,9 @@ container:
 7. **Assemble runtime payload** into `$SNAP/lib/pi/` — pruned `node_modules/`
    plus `dist/` and `package.json`/`README.md` from each workspace package
    pi-coding-agent needs (telemetry, ai, protocol, agent, tui, client,
-   coding-agent), mirroring the pi AUR package's layout
+   coding-agent), mirroring the pi AUR package's layout; source maps, `.d.ts`
+   type declarations, and the bundled `dist/bundle` CLI duplicate are then
+   stripped as they are never loaded at runtime
 8. **Bundle the Node.js runtime** at `$SNAP/node/bin/node`; the wrapper
    script execs it against `packages/coding-agent/dist/cli.js`
 9. **Install `wl-clipboard`** from Ubuntu package via `stage-packages` for
