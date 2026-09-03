@@ -7,22 +7,38 @@ using Snapcraft. The snap is built inside an LXD container via GitHub Actions.
 
 ## Build process
 
-The snap reuses pi's existing `build:binary` npm script rather than custom build steps:
+The snap builds pi from source with npm and bundles a real Node.js
+runtime for execution:
 
 1. Clone upstream pi at a pinned `source-tag` in `snap/snapcraft.yaml`
-2. Install Node.js (prebuilt binary) + Bun (prebuilt binary) as build tools
-3. `npm ci --ignore-scripts` at repo root
-4. Install platform-specific clipboard native binding
-5. `npm run build:binary` in `packages/coding-agent/` (builds 4 packages + bun compile)
-6. Install binary + assets into `$SNAP/bin/` (matches pi's `getPackageDir()` resolution)
-7. Install `wl-clipboard` via `stage-packages` from Ubuntu for Wayland clipboard support
-8. Install wrapper script + bash completion
+2. Install Node.js (prebuilt binary) as build tool; the same binary is
+   staged into the snap as the runtime `node` executable
+3. Fetch the matching `@earendil-works/pi-ai` npm tarball and copy its
+   pre-generated `dist/providers/data` into `packages/ai/src/providers/data`
+   (that directory is not committed to git — it is normally produced by a
+   live network call — and using the published npm snapshot keeps the build
+   deterministic and offline-safe)
+4. `npm ci --ignore-scripts` at repo root
+5. `npm run build:offline` (builds all workspace packages with pi's plain
+   npm pipeline, reusing the model data staged in step 3)
+6. `npm prune --omit=dev --ignore-scripts` so only production deps ship
+7. Assemble the runtime payload into `$SNAP/lib/pi/`: pruned `node_modules/`
+   plus `dist/` + `package.json` + `README.md` (and docs/examples/CHANGELOG
+   for coding-agent) from the workspace packages pi-coding-agent needs
+   (telemetry, ai, protocol, agent, tui, client, coding-agent), then strip
+   build artifacts that are never loaded at runtime (source maps, `.d.ts`
+   type declarations, and the `dist/bundle` duplicate) to keep the snap lean
+8. Bundle the Node.js runtime executable into `$SNAP/node/bin/node`;
+   `pi.wrapper` execs it against `packages/coding-agent/dist/cli.js`
+9. Install `wl-clipboard` via `stage-packages` from Ubuntu for Wayland
+   clipboard support
+10. Install wrapper script + bash completion
 
 ## Key files
 
 | File | Purpose |
 |---|---|
-| `snap/snapcraft.yaml` | Snap build definition with 5 parts |
+| `snap/snapcraft.yaml` | Snap build definition with 4 parts |
 | `snap/local/pi.wrapper` | Wrapper that unsets `SNAP_*` env vars |
 | `snap/local/pi.completion` | Bash completion for `pi` and `pi-coding-agent` |
 | `renovate.json` | Custom regex managers for version updates |
@@ -46,7 +62,9 @@ The snap reuses pi's existing `build:binary` npm script rather than custom build
 - **Base**: `core26` (Ubuntu 26.04 LTS)
 - **Confinement**: `classic` (needs unrestricted filesystem access)
 - **Platforms**: amd64, arm64
-- **Binary**: standalone Bun-compiled executable (no Node.js needed at runtime)
+- **Runtime**: bundled Node.js staged at `$SNAP/node/bin/node`; pi runs as a
+  plain Node.js CLI (`packages/coding-agent/dist/cli.js`) via `pi.wrapper`,
+  so no host Node.js install is needed
 - **CI pipeline**: `build.yml` → `tasteful-crafts.yml` orchestrates snap build
   (LXD), image-garden spread integration tests across Ubuntu/Debian cloud
   systems, and Snap Store upload to `latest/edge` (branch) or
@@ -71,4 +89,4 @@ Pi needs both clipboard mechanisms:
 
 ## License
 
-MIT AND Apache-2.0. The bundled pi binary is MIT (upstream); the snap packaging files in this repository are Apache-2.0 (Canonical Ltd.).
+MIT AND Apache-2.0. The bundled pi code is MIT (upstream); the bundled Node.js runtime is MIT (Node.js contributors); the snap packaging files in this repository are Apache-2.0 (Canonical Ltd.).

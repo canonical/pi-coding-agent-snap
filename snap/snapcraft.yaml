@@ -13,8 +13,11 @@ description: |
   plan mode. Instead, you can ask pi to build what you want or install a
   third party pi package that matches your workflow.
 
-  This snap packages the Bun-compiled standalone binary built from the
-  upstream pi repository.
+  This snap bundles a Node.js runtime and runs pi's plain (non-Bun)
+  JavaScript CLI, built from the upstream pi repository. Bundling Node.js
+  means no host Node.js install is required, and it avoids pi's
+  Bun-compiled standalone binary, whose hardcoded 5-minute socket timeout
+  breaks long-running requests to local LLM models.
 
   The snap packaging is maintained separately at
   https://github.com/canonical/pi-coding-agent-snap
@@ -47,7 +50,8 @@ apps:
 
 parts:
   # ============================================================
-  # Node.js — needed for npm workspace and TypeScript compilation
+  # Node.js — build-time toolchain (npm workspace + TypeScript
+  # compilation) and the runtime `node` binary bundled in the snap
   # ============================================================
   nodejs:
     plugin: nil
@@ -66,49 +70,39 @@ parts:
       echo "Downloading Node.js from $NODE_URL"
       curl -fsSL "$NODE_URL" -o /tmp/node.tar.xz
       tar -xf /tmp/node.tar.xz -C /tmp
-      echo "Installing Node.js to /usr/local"
+
+      # Build-time toolchain: node/npm/npx on PATH for the pi-build part,
+      # which runs later in the same build environment.
+      echo "Installing Node.js build toolchain to /usr/local"
       cp -r /tmp/node-v*/bin/* /usr/local/bin/
       cp -r /tmp/node-v*/lib/node_modules /usr/local/lib/
+
+      # Runtime payload: pi no longer ships as a Bun-compiled standalone
+      # binary (see https://github.com/canonical/pi-coding-agent-snap/issues/13
+      # — Bun hardcodes a 5 minute socket timeout that breaks long-running
+      # local-model requests: https://github.com/oven-sh/bun/issues/16682).
+      # Bundle the `node` executable itself so pi.wrapper can run pi's
+      # plain Node.js CLI without depending on a host Node.js install.
+      echo "Staging node runtime into the snap payload"
+      mkdir -p "${CRAFT_PART_INSTALL}/node/bin"
+      cp /tmp/node-v*/bin/node "${CRAFT_PART_INSTALL}/node/bin/node"
+
+      # Ship Node.js' own LICENSE alongside the bundled runtime so the snap
+      # carries the license text for the redistributed Node.js binary.
+      cp /tmp/node-v*/LICENSE "${CRAFT_PART_INSTALL}/node/LICENSE"
+
       rm -f /tmp/node.tar.xz
 
   # ============================================================
-  # Bun — used by pi's build:binary to compile the standalone binary
-  #
-  # `bun build --compile` embeds a copy of the Bun binary that runs the
-  # command into the produced standalone executable. Bun ships a "modern"
-  # amd64 release that requires AVX2 and a separate "-baseline" release
-  # (x86-64-v2, no AVX2) for older CPUs. Using the modern release here
-  # made the resulting `pi` binary SIGILL on pre-Haswell CPUs (Sandy
-  # Bridge / Ivy Bridge / etc. without AVX2) — see
-  # https://github.com/canonical/pi-coding-agent-snap/issues/8. Use the
-  # baseline amd64 release so the compiled `pi` binary stays compatible
-  # with all standard x86-64 hardware. arm64 has no such split (there is
-  # no "-baseline" aarch64 release) so it is unaffected.
-  # ============================================================
-  bun:
-    after:
-      - nodejs
-    plugin: dump
-    source:
-      - on amd64 to amd64: https://github.com/oven-sh/bun/releases/download/bun-v1.4.0/bun-linux-x64-baseline.zip
-      - on arm64 to arm64: https://github.com/oven-sh/bun/releases/download/bun-v1.4.0/bun-linux-aarch64.zip
-    override-build: |
-      install -Dm755 "${CRAFT_PART_SRC}"/bun-linux-*/bun /usr/local/bin/bun
-      ln -sf /usr/local/bin/bun /usr/local/bin/bunx
-
-  # ============================================================
-  # Pi — clone upstream source, install deps, build binary + assets
+  # Pi — clone upstream source, install deps, build JS CLI + assets
   # ============================================================
   pi-build:
     after:
       - nodejs
-      - bun
     plugin: nil
     source: https://github.com/earendil-works/pi
     source-type: git
     source-tag: v0.84.4
-    build-packages:
-      - build-essential
     build-environment:
       - PATH: "/usr/local/bin:${PATH}"
     override-build: |
@@ -116,84 +110,124 @@ parts:
 
       echo "Using node: $(node --version)"
       echo "Using npm: $(npm --version)"
-      echo "Using bun: $(bun --version)"
+
+      # ------------------------------------------------------------------
+      # pi's git source tarball does not include generated LLM provider
+      # model-data (packages/ai/src/providers/data is produced by a live
+      # network call: `npm run generate-models`). To keep the snap build
+      # deterministic and not dependent on live provider catalog APIs,
+      # pull the exact same data already published in the matching
+      # @earendil-works/pi-ai npm release — mirroring the pi AUR package's
+      # PKGBUILD `prepare()` step, which does exactly this.
+      # ------------------------------------------------------------------
+      AI_VERSION=$(node -e "console.log(require('./packages/ai/package.json').version)")
+      echo "Fetching pi-ai@${AI_VERSION} npm tarball for provider model data"
+      # Use `npm pack` rather than a raw curl so npm verifies the tarball's
+      # sha512 integrity against the registry's published dist.integrity metadata.
+      # The version stays derived from the checked-out source-tag above so it can
+      # never drift from the snap's source-tag.
+      mkdir -p /tmp/pi-ai-npm-src /tmp/pi-ai-npm
+      npm pack "@earendil-works/pi-ai@${AI_VERSION}" --pack-destination /tmp/pi-ai-npm-src
+      tar -xzf /tmp/pi-ai-npm-src/*.tgz -C /tmp/pi-ai-npm
+      rm -rf packages/ai/src/providers/data
+      cp -r /tmp/pi-ai-npm/package/dist/providers/data packages/ai/src/providers/data
+      rm -rf /tmp/pi-ai-npm-src /tmp/pi-ai-npm
 
       # ----------------------------------------------------------
-      # Install workspace dependencies
+      # Install workspace dependencies (build + production deps).
+      # Native optional deps (e.g. @mariozechner/clipboard-linux-*-gnu)
+      # resolve automatically for the current arch since this part always
+      # builds natively (amd64-on-amd64, arm64-on-arm64; no cross-compile).
       # ----------------------------------------------------------
       npm ci --ignore-scripts
 
       # ----------------------------------------------------------
-      # Install clipboard native binding for the target platform
-      # This must happen BEFORE bun build --compile so the binding
-      # is available for embedding and for runtime resolution.
+      # Build all workspace packages with pi's plain (non-Bun) pipeline.
+      # build:offline reuses the model data staged above instead of
+      # refreshing it from live provider catalogs.
+      # ----------------------------------------------------------
+      npm run build:offline
+
+      # ----------------------------------------------------------
+      # Drop devDependencies; only production deps ship in the snap.
+      # ----------------------------------------------------------
+      npm prune --omit=dev --ignore-scripts
+
+      # ----------------------------------------------------------
+      # The clipboard native binding (@mariozechner/clipboard-linux-*-gnu)
+      # is an optionalDependency, so npm silently skips it if the registry
+      # fetch glitches — which would ship a snap with no X11 image-paste
+      # support and no build error. Fail loudly here instead, so a missing
+      # binding aborts the build rather than degrading silently.
       # ----------------------------------------------------------
       case "$CRAFT_ARCH_BUILD_FOR" in
         amd64)
-          npm install --no-save @mariozechner/clipboard-linux-x64-gnu
-          CLIPBOARD_NATIVE_PKG="clipboard-linux-x64-gnu"
-          CLIPBOARD_NATIVE_FILE="clipboard.linux-x64-gnu.node"
+          _CLIP_NAPI_ARCH=x64
           ;;
         arm64)
-          npm install --no-save @mariozechner/clipboard-linux-arm64-gnu
-          CLIPBOARD_NATIVE_PKG="clipboard-linux-arm64-gnu"
-          CLIPBOARD_NATIVE_FILE="clipboard.linux-arm64-gnu.node"
+          _CLIP_NAPI_ARCH=arm64
           ;;
       esac
+      _CLIP_BINDING="node_modules/@mariozechner/clipboard-linux-${_CLIP_NAPI_ARCH}-gnu/clipboard.linux-${_CLIP_NAPI_ARCH}-gnu.node"
+      echo "Verifying clipboard native binding: $_CLIP_BINDING"
+      test -f "$_CLIP_BINDING" || {
+        echo "ERROR: clipboard native binding not found after npm prune." >&2
+        echo "       optionalDependency resolution may have failed silently." >&2
+        exit 1
+      }
 
       # ----------------------------------------------------------
-      # Build pi binary using pi's own build:binary script.
-      # This compiles TypeScript for all 4 packages, then runs
-      # bun build --compile, then copies runtime assets.
+      # Derive snap version from the coding-agent package.json
       # ----------------------------------------------------------
-      cd packages/coding-agent
-      npm run build:binary
-
-      # ----------------------------------------------------------
-      # Derive snap version from the built package.json
-      # ----------------------------------------------------------
-      PI_VERSION=$(node -e "console.log(require('./dist/package.json').version)")
+      PI_VERSION=$(node -e "console.log(require('./packages/coding-agent/package.json').version)")
       craftctl set version="$PI_VERSION"
 
       # ----------------------------------------------------------
-      # Install the binary into the snap
+      # Assemble the runtime payload. Layout mirrors the pi AUR package
+      # (/usr/lib/node_modules/pi): node_modules/ and packages/ as
+      # siblings so npm workspace symlinks inside node_modules (e.g.
+      # node_modules/@earendil-works/pi-agent-core -> ../../packages/agent)
+      # keep resolving correctly. Do not include packages/session-backends
+      # or packages/server: pi-coding-agent does not depend on them at
+      # runtime (matches the AUR package's copy list).
       # ----------------------------------------------------------
-      install -Dm755 dist/pi "${CRAFT_PART_INSTALL}/bin/pi"
+      PI_HOME="${CRAFT_PART_INSTALL}/lib/pi"
+      mkdir -p "${PI_HOME}/node_modules"
+      cp -a node_modules/. "${PI_HOME}/node_modules/"
+      rm -rf "${PI_HOME}/node_modules/koffi"   # Windows-only clipboard helper
+
+      # Ship pi's LICENSE (MIT, copyright earendil-works) next to the
+      # bundled packages so the snap carries the upstream license text.
+      cp LICENSE "${PI_HOME}/LICENSE"
+
+      for pkg in telemetry ai protocol agent tui client; do
+        mkdir -p "${PI_HOME}/packages/${pkg}"
+        cp -a "packages/${pkg}/dist" "packages/${pkg}/package.json" "packages/${pkg}/README.md" \
+          "${PI_HOME}/packages/${pkg}/"
+      done
+
+      mkdir -p "${PI_HOME}/packages/coding-agent"
+      cp -a packages/coding-agent/dist packages/coding-agent/docs packages/coding-agent/examples \
+        packages/coding-agent/package.json packages/coding-agent/README.md packages/coding-agent/CHANGELOG.md \
+        "${PI_HOME}/packages/coding-agent/"
 
       # ----------------------------------------------------------
-      # Install supporting assets next to the binary
-      # (getPackageDir() -> dirname(process.execPath) resolves here)
+      # Strip build artifacts that are never loaded at runtime.
+      #
+      # - *.map / *.d.ts / *.d.mts / *.d.cts: source maps + type
+      #   declarations. The bundled node runtime does not enable source
+      #   maps (backtraces already resolve to the compiled .js files) and
+      #   type declarations are only needed by consumers doing their own
+      #   type-checking. Together they account for ~10 MiB of the snap.
+      # - dist/bundle/: the bundled CLI variant (created by
+      #   scripts/build-coding-agent-bundle.mjs). pi.wrapper execs
+      #   packages/coding-agent/dist/cli.js directly, so the bundled
+      #   duplicate (~1.5 MiB) is dead weight.
       # ----------------------------------------------------------
-      install -Dm644 dist/package.json "${CRAFT_PART_INSTALL}/bin/package.json"
-      install -Dm644 dist/README.md "${CRAFT_PART_INSTALL}/bin/README.md"
-      install -Dm644 dist/CHANGELOG.md "${CRAFT_PART_INSTALL}/bin/CHANGELOG.md"
-      install -Dm644 dist/photon_rs_bg.wasm "${CRAFT_PART_INSTALL}/bin/photon_rs_bg.wasm"
-
-      mkdir -p "${CRAFT_PART_INSTALL}/bin/theme"
-      cp -r dist/theme/*.json "${CRAFT_PART_INSTALL}/bin/theme/"
-
-      mkdir -p "${CRAFT_PART_INSTALL}/bin/assets"
-      cp dist/assets/*.png "${CRAFT_PART_INSTALL}/bin/assets/"
-
-      mkdir -p "${CRAFT_PART_INSTALL}/bin/export-html/vendor"
-      cp dist/export-html/template.html "${CRAFT_PART_INSTALL}/bin/export-html/"
-      cp dist/export-html/vendor/*.js "${CRAFT_PART_INSTALL}/bin/export-html/vendor/"
-
-      cp -r dist/docs "${CRAFT_PART_INSTALL}/bin/docs"
-      cp -r dist/examples "${CRAFT_PART_INSTALL}/bin/examples"
-
-      # ----------------------------------------------------------
-      # Install clipboard native binding where pi can find it
-      # clipboard-native.ts resolves @mariozechner/clipboard from
-      # the dir containing process.execPath (i.e. $SNAP/bin/)
-      # ----------------------------------------------------------
-      mkdir -p "${CRAFT_PART_INSTALL}/bin/node_modules/@mariozechner"
-      cp -r ../../node_modules/@mariozechner/clipboard \
-        "${CRAFT_PART_INSTALL}/bin/node_modules/@mariozechner/"
-      cp -r "../../node_modules/@mariozechner/${CLIPBOARD_NATIVE_PKG}" \
-        "${CRAFT_PART_INSTALL}/bin/node_modules/@mariozechner/"
-      cp "../../node_modules/@mariozechner/${CLIPBOARD_NATIVE_PKG}/${CLIPBOARD_NATIVE_FILE}" \
-        "${CRAFT_PART_INSTALL}/bin/node_modules/@mariozechner/clipboard/"
+      find "${PI_HOME}" -type f \( \
+          -name '*.map' -o -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' \
+      \) -delete
+      rm -rf "${PI_HOME}/packages/coding-agent/dist/bundle"
 
   # ============================================================
   # wl-clipboard — Wayland clipboard tools from Ubuntu package

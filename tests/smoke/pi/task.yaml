@@ -18,3 +18,26 @@ execute: |
     # Test the pi alias target (pi-coding-agent.pi).
     snap run pi-coding-agent.pi --help 2>&1 | MATCH "pi"
     snap run pi-coding-agent.pi --version 2>&1 | MATCH "0.84.4"
+
+    # Verify the new Node.js-runtime layout (fixes
+    # https://github.com/canonical/pi-coding-agent-snap/issues/13: the
+    # previous Bun-compiled binary hardcoded a 5-minute socket timeout).
+    /snap/pi-coding-agent/current/node/bin/node --version 2>&1 | MATCH "v22"
+    test -e /snap/pi-coding-agent/current/lib/pi/packages/coding-agent/dist/cli.js
+    test ! -e /snap/pi-coding-agent/current/bin/pi
+
+    # The X11 clipboard native binding is an npm optionalDependency that
+    # npm may silently skip; the build fails loudly if it is missing, and
+    # this doubles as a runtime guard against payload assembly regressions.
+    ls /snap/pi-coding-agent/current/lib/pi/node_modules/@mariozechner/clipboard-linux-*-gnu/clipboard.linux-*-gnu.node >/dev/null
+
+    # License texts for the redistributed upstream code must ship.
+    test -e /snap/pi-coding-agent/current/node/LICENSE
+    test -e /snap/pi-coding-agent/current/lib/pi/LICENSE
+
+    # Unused build artifacts are stripped from the payload: no source maps
+    # or type declarations anywhere under lib/pi, and no bundled CLI
+    # duplicate (pi.wrapper execs dist/cli.js directly).
+    test -z "$(find /snap/pi-coding-agent/current/lib/pi \( -name '*.map' -o -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' \) -print -quit)"
+    test ! -e \
+        /snap/pi-coding-agent/current/lib/pi/packages/coding-agent/dist/bundle
