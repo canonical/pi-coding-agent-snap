@@ -38,8 +38,6 @@ execute: |
     # Unused build artifacts are stripped from the payload: no source maps
     # or type declarations anywhere under lib/pi, and no bundled CLI
     # duplicate (pi.wrapper execs dist/cli.js directly).
-    test -z "$(find /snap/pi-coding-agent/current/lib/pi \(
-        -name '*.map' -o -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts'
-        \) -print -quit)"
+    test -z "$(find /snap/pi-coding-agent/current/lib/pi \( -name '*.map' -o -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' \) -print -quit)"
     test ! -e \
         /snap/pi-coding-agent/current/lib/pi/packages/coding-agent/dist/bundle

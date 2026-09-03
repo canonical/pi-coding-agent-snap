@@ -224,8 +224,8 @@ parts:
       #   packages/coding-agent/dist/cli.js directly, so the bundled
       #   duplicate (~1.5 MiB) is dead weight.
       # ----------------------------------------------------------
-      find "${PI_HOME}" -type f \(
-        -name '*.map' -o -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts'
+      find "${PI_HOME}" -type f \( \
+          -name '*.map' -o -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' \
       \) -delete
       rm -rf "${PI_HOME}/packages/coding-agent/dist/bundle"
 
