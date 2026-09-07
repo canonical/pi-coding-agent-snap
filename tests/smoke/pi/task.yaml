@@ -41,3 +41,12 @@ execute: |
     test -z "$(find /snap/pi-coding-agent/current/lib/pi \( -name '*.map' -o -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' \) -print -quit)"
     test ! -e \
         /snap/pi-coding-agent/current/lib/pi/packages/coding-agent/dist/bundle
+
+    # Every npm workspace symlink must resolve inside the payload. The
+    # workspace package set is derived at build time from the actual dist/
+    # imports (snap/local/pi-workspace-packages.mjs); a dangling symlink
+    # here means a package the runtime imports was not shipped (e.g.
+    # @earendil-works/chord in pi 0.85.1, the reason this guard exists),
+    # which would crash the CLI with ERR_MODULE_NOT_FOUND.
+    test -z "$(find /snap/pi-coding-agent/current/lib/pi/node_modules -type l \
+        ! -exec test -e {} \; -print -quit)"
