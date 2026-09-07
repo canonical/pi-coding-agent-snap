@@ -24,8 +24,11 @@ runtime for execution:
 6. `npm prune --omit=dev --ignore-scripts` so only production deps ship
 7. Assemble the runtime payload into `$SNAP/lib/pi/`: pruned `node_modules/`
    plus `dist/` + `package.json` + `README.md` (and docs/examples/CHANGELOG
-   for coding-agent) from the workspace packages pi-coding-agent needs
-   (telemetry, ai, protocol, agent, tui, client, coding-agent), then strip
+   for coding-agent) from the workspace packages pi-coding-agent needs. The
+   package set is **derived** from the actual `@earendil-works/*` imports in
+   the built dist via `snap/local/pi-workspace-packages.mjs` (a hardcoded
+   list silently broke when pi 0.85.1 added `@earendil-works/chord`),
+   dangling workspace symlinks are pruned from `node_modules/`, then strip
    build artifacts that are never loaded at runtime (source maps, `.d.ts`
    type declarations, and the `dist/bundle` duplicate) to keep the snap lean
 8. Bundle the Node.js runtime executable into `$SNAP/node/bin/node`;
@@ -41,6 +44,7 @@ runtime for execution:
 | `snap/snapcraft.yaml` | Snap build definition with 4 parts |
 | `snap/local/pi.wrapper` | Wrapper that unsets `SNAP_*` env vars |
 | `snap/local/pi.completion` | Bash completion for `pi` and `pi-coding-agent` |
+| `snap/local/pi-workspace-packages.mjs` | Derives the workspace packages to ship from the built dist imports |
 | `renovate.json` | Custom regex managers for version updates |
 | `spread.yaml` | Spread test backend config (image-garden adhoc backend) |
 | `.image-garden.mk` | image-garden cloud-init user-data templates (core26) |

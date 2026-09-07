@@ -52,10 +52,14 @@ container:
 6. **`npm prune --omit=dev`** — drops devDependencies so only production deps ship
 7. **Assemble runtime payload** into `$SNAP/lib/pi/` — pruned `node_modules/`
    plus `dist/` and `package.json`/`README.md` from each workspace package
-   pi-coding-agent needs (telemetry, ai, protocol, agent, tui, client,
-   coding-agent), mirroring the pi AUR package's layout; source maps, `.d.ts`
-   type declarations, and the bundled `dist/bundle` CLI duplicate are then
-   stripped as they are never loaded at runtime
+   the CLI needs. The set is *derived* from the actual `@earendil-works/*`
+   imports in the built `dist/` (see `snap/local/pi-workspace-packages.mjs`)
+   rather than hardcoded, so an upstream pi release that adds a new
+   workspace package cannot ship a dangling symlink again; dangling
+   workspace symlinks are deleted from `node_modules/` to keep the payload
+   self-consistent. Source maps, `.d.ts` type declarations, and the bundled
+   `dist/bundle` CLI duplicate are then stripped as they are never loaded
+   at runtime
 8. **Bundle the Node.js runtime** at `$SNAP/node/bin/node`; the wrapper
    script execs it against `packages/coding-agent/dist/cli.js`
 9. **Install `wl-clipboard`** from Ubuntu package via `stage-packages` for
