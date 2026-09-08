@@ -13,11 +13,11 @@ execute: |
 
     # Test the default app (pi-coding-agent).
     snap run pi-coding-agent --help 2>&1 | MATCH "pi"
-    snap run pi-coding-agent --version 2>&1 | MATCH "0.84.4"
+    snap run pi-coding-agent --version 2>&1 | MATCH "0.85.1"
 
     # Test the pi alias target (pi-coding-agent.pi).
     snap run pi-coding-agent.pi --help 2>&1 | MATCH "pi"
-    snap run pi-coding-agent.pi --version 2>&1 | MATCH "0.84.4"
+    snap run pi-coding-agent.pi --version 2>&1 | MATCH "0.85.1"
 
     # Verify the new Node.js-runtime layout (fixes
     # https://github.com/canonical/pi-coding-agent-snap/issues/13: the
@@ -41,3 +41,12 @@ execute: |
     test -z "$(find /snap/pi-coding-agent/current/lib/pi \( -name '*.map' -o -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' \) -print -quit)"
     test ! -e \
         /snap/pi-coding-agent/current/lib/pi/packages/coding-agent/dist/bundle
+
+    # Every npm workspace symlink must resolve inside the payload. The
+    # workspace package set is derived at build time from the actual dist/
+    # imports (snap/local/pi-workspace-packages.mjs); a dangling symlink
+    # here means a package the runtime imports was not shipped (e.g.
+    # @earendil-works/chord in pi 0.85.1, the reason this guard exists),
+    # which would crash the CLI with ERR_MODULE_NOT_FOUND.
+    test -z "$(find /snap/pi-coding-agent/current/lib/pi/node_modules -type l \
+        ! -exec test -e {} \; -print -quit)"
