@@ -87,7 +87,7 @@ the expected version in `tests/smoke/pi/task.yaml`.
 
 Pi needs both clipboard mechanisms:
 
-- **`@mariozechner/clipboard-linux-$ARCH-gnu`** — native binding for X11 image reading
+- **`@earendil-works/pi-tui` native X11 helper** — bundled Linux prebuild `linux-platform-x11.node` provides X11 clipboard image reading (replaces the former `@mariozechner/clipboard-linux-$ARCH-gnu` optional dependency, removed in pi 0.86.0)
 - **`wl-clipboard`** — `wl-copy`/`wl-paste` for Wayland clipboard (pi explicitly skips
   the native addon on Linux for text operations)
 
