@@ -38,9 +38,7 @@ container:
    tarball is downloaded and its pre-generated `dist/providers/data` is
    copied into the source tree. This keeps the build deterministic and
    offline-safe, mirroring the pi AUR package's approach.
-4. **`npm ci --ignore-scripts`** at repo root — installs all workspace deps,
-   including the arch-correct `@mariozechner/clipboard-linux-*-gnu`
-   optional dependency for the build host
+4. **`npm ci --ignore-scripts`** at repo root — installs all workspace deps
 5. **`npm run build:offline`** at repo root — builds all workspace packages
    with pi's plain npm pipeline (no standalone compiled binary):
    - Builds `@earendil-works/pi-tui` → `dist/`
@@ -82,11 +80,9 @@ Pi's clipboard logic differs by display server — so we need **both** mechanism
 | Session | Text copy | Image paste |
 |---|---|---|
 | **Wayland** | `wl-copy` (native addon explicitly skipped on Linux) | `wl-paste` → `xclip` |
-| **X11** | `xclip` / `xsel` (native addon skipped) | `@mariozechner/clipboard` → `xclip` |
+| **X11** | `xclip` / `xsel` (native addon skipped) | `@earendil-works/pi-tui` native X11 helper (`linux-platform-x11.node`) |
 
-- `@mariozechner/clipboard-linux-$ARCH-gnu` is an npm `optionalDependencies`
-  package that `npm ci` resolves automatically for the build host's
-  architecture (no manual install step needed); it handles X11 image reading
+- `@earendil-works/pi-tui` ships bundled Linux prebuilds (`packages/tui/native/linux/prebuilds/.../linux-platform-x11.node`) for X11 clipboard image reading; the former `@mariozechner/clipboard-linux-$ARCH-gnu` optional dependency was removed in pi 0.86.0
 - `wl-clipboard` (Ubuntu package via `stage-packages`) provides
   `wl-copy`/`wl-paste` for Wayland clipboard
 

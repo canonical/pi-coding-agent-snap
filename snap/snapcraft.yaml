@@ -134,10 +134,11 @@ parts:
       rm -rf /tmp/pi-ai-npm-src /tmp/pi-ai-npm
 
       # ----------------------------------------------------------
-      # Install workspace dependencies (build + production deps).
-      # Native optional deps (e.g. @mariozechner/clipboard-linux-*-gnu)
-      # resolve automatically for the current arch since this part always
-      # builds natively (amd64-on-amd64, arm64-on-arm64; no cross-compile).
+      # Install workspace dependencies (build + production deps). This
+      # part always builds natively (amd64-on-amd64, arm64-on-arm64; no
+      # cross-compile), so npm resolves any native deps for the correct
+      # arch; the pi-tui clipboard prebuild shipped below is instead
+      # selected explicitly via the $CRAFT_ARCH_BUILD_FOR case there.
       # ----------------------------------------------------------
       npm ci --ignore-scripts
 
@@ -152,29 +153,6 @@ parts:
       # Drop devDependencies; only production deps ship in the snap.
       # ----------------------------------------------------------
       npm prune --omit=dev --ignore-scripts
-
-      # ----------------------------------------------------------
-      # The clipboard native binding (@mariozechner/clipboard-linux-*-gnu)
-      # is an optionalDependency, so npm silently skips it if the registry
-      # fetch glitches — which would ship a snap with no X11 image-paste
-      # support and no build error. Fail loudly here instead, so a missing
-      # binding aborts the build rather than degrading silently.
-      # ----------------------------------------------------------
-      case "$CRAFT_ARCH_BUILD_FOR" in
-        amd64)
-          _CLIP_NAPI_ARCH=x64
-          ;;
-        arm64)
-          _CLIP_NAPI_ARCH=arm64
-          ;;
-      esac
-      _CLIP_BINDING="node_modules/@mariozechner/clipboard-linux-${_CLIP_NAPI_ARCH}-gnu/clipboard.linux-${_CLIP_NAPI_ARCH}-gnu.node"
-      echo "Verifying clipboard native binding: $_CLIP_BINDING"
-      test -f "$_CLIP_BINDING" || {
-        echo "ERROR: clipboard native binding not found after npm prune." >&2
-        echo "       optionalDependency resolution may have failed silently." >&2
-        exit 1
-      }
 
       # ----------------------------------------------------------
       # Derive snap version from the coding-agent package.json
@@ -229,6 +207,38 @@ parts:
         cp -a "packages/${pkg}/dist" "packages/${pkg}/package.json" "packages/${pkg}/README.md" \
           "${PI_HOME}/packages/${pkg}/"
       done
+
+      # ----------------------------------------------------------
+      # X11 clipboard image reading is a native prebuild bundled inside
+      # @earendil-works/pi-tui (pi 0.86 replaced the former
+      # @mariozechner/clipboard optionalDependency with this), loaded at
+      # runtime from packages/tui/native/... relative to the installed
+      # package directory — never from dist/. The copy loop above only
+      # ships dist/package.json/README.md, so without this the helper
+      # would silently fail to load (no build error, no crash — just no
+      # X11 image-paste). Ship only the Linux prebuild for the arch this
+      # part is building for; darwin/win32 native subtrees and headers
+      # are dead weight in a Linux snap.
+      # ----------------------------------------------------------
+      if printf '%s\n' "$PACKAGES_TO_COPY" | grep -qx tui; then
+        case "$CRAFT_ARCH_BUILD_FOR" in
+          amd64)
+            _TUI_NATIVE_ARCH=x64
+            ;;
+          arm64)
+            _TUI_NATIVE_ARCH=arm64
+            ;;
+        esac
+        _TUI_NATIVE_NODE="packages/tui/native/linux/prebuilds/linux-${_TUI_NATIVE_ARCH}/linux-platform-x11.node"
+        echo "Verifying pi-tui native clipboard helper: $_TUI_NATIVE_NODE"
+        test -f "$_TUI_NATIVE_NODE" || {
+          echo "ERROR: pi-tui native clipboard helper not found: $_TUI_NATIVE_NODE" >&2
+          echo "       upstream pi-tui packaging may have changed; update this copy step." >&2
+          exit 1
+        }
+        mkdir -p "${PI_HOME}/packages/tui/native/linux/prebuilds/linux-${_TUI_NATIVE_ARCH}"
+        cp -a "$_TUI_NATIVE_NODE" "${PI_HOME}/packages/tui/native/linux/prebuilds/linux-${_TUI_NATIVE_ARCH}/"
+      fi
 
       # node_modules/ links every workspace package via npm, not just the
       # ones in the runtime closure. Drop symlinks whose target package
