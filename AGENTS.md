@@ -65,10 +65,20 @@ runtime for execution:
 
 - **Base**: `core26` (Ubuntu 26.04 LTS)
 - **Confinement**: `classic` (needs unrestricted filesystem access)
-- **Platforms**: amd64, arm64
+- **Platforms**: amd64, arm64, riscv64
 - **Runtime**: bundled Node.js staged at `$SNAP/node/bin/node`; pi runs as a
   plain Node.js CLI (`packages/coding-agent/dist/cli.js`) via `pi.wrapper`,
   so no host Node.js install is needed
+- **riscv64 specifics**: nodejs.org publishes no riscv64 binaries, so Node.js
+  comes from the Node.js project's unofficial-builds (`unofficial-builds.
+  nodejs.org`), which publishes the same pinned version (v22.23.1) — every
+  architecture uses the same node/npm source and version. The pi-tui native
+  clipboard prebuild is x64/arm64-only and is skipped; pi falls back to
+  command-line clipboard tools. The build-time compiler needs a swap: pi
+  pins tsgo, which has no linux-riscv64 binary, so pi-build installs the
+  shipped `typescript@7.0.2` (which does ship one) and shims `tsgo` to its
+  `tsc --target es2024`. llhttp's WASM SIMD build misparses HTTP/1.1
+  responses on riscv64, so `pi.wrapper` sets `UNDICI_NO_WASM_SIMD=1` there.
 - **CI pipeline**: `build.yml` → `tasteful-crafts.yml` orchestrates snap build
   (LXD), image-garden spread integration tests across Ubuntu/Debian cloud
   systems, and Snap Store upload to `latest/edge` (branch) or

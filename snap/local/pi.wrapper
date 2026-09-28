@@ -17,4 +17,13 @@ for var in $(env | cut -d= -f1 | grep '^SNAP'); do
     unset "$var"
 done
 
+# llhttp's WASM SIMD build (used by pi's bundled undici for HTTP/1.1
+# response parsing) misparses responses on riscv64 with spurious
+# "Invalid header value char" errors, surfacing as intermittent
+# "Connection error" failures. undici disables the SIMD build on ppc64
+# for the same reason; force the non-SIMD wasm build on riscv64.
+if [ "$(uname -m)" = "riscv64" ]; then
+    export UNDICI_NO_WASM_SIMD=1
+fi
+
 exec "$NODE" "$CLI" "$@"

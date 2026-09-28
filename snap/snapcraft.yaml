@@ -39,6 +39,9 @@ platforms:
   arm64:
     build-on: [arm64]
     build-for: [arm64]
+  riscv64:
+    build-on: [riscv64]
+    build-for: [riscv64]
 
 apps:
   pi-coding-agent:
@@ -59,14 +62,23 @@ parts:
       - curl
       - xz-utils
     override-build: |
+      NODE_VERSION="v22.23.1"
+      NODE_BASE="https://nodejs.org/dist"
       case "$CRAFT_ARCH_BUILD_FOR" in
         amd64)
-          NODE_URL="https://nodejs.org/dist/v22.23.1/node-v22.23.1-linux-x64.tar.xz"
+          NODE_ARCH="x64"
           ;;
         arm64)
-          NODE_URL="https://nodejs.org/dist/v22.23.1/node-v22.23.1-linux-arm64.tar.xz"
+          NODE_ARCH="arm64"
+          ;;
+        riscv64)
+          # RISC-V currently has no official builds, so we use unofficial ones instead for now
+          NODE_BASE="https://unofficial-builds.nodejs.org/download/release"
+          NODE_ARCH="riscv64"
           ;;
       esac
+
+      NODE_URL="$NODE_BASE/$NODE_VERSION/node-$NODE_VERSION-linux-$NODE_ARCH.tar.xz"
       echo "Downloading Node.js from $NODE_URL"
       curl -fsSL "$NODE_URL" -o /tmp/node.tar.xz
       tar -xf /tmp/node.tar.xz -C /tmp
@@ -141,6 +153,28 @@ parts:
       # selected explicitly via the $CRAFT_ARCH_BUILD_FOR case there.
       # ----------------------------------------------------------
       npm ci --ignore-scripts
+
+      # ----------------------------------------------------------
+      # riscv64 only: pi pins tsgo (@typescript/native-preview) as the
+      # build-time compiler, and Microsoft publishes no linux-riscv64
+      # binary for it (the package has no JS fallback), so the workspace
+      # "tsgo -p" build scripts cannot run as-is. Swap in the shipped
+      # typescript 7 package, which does ship a linux-riscv64 binary, and
+      # shim node_modules/.bin/tsgo to its tsc. The shim also passes
+      # --target es2024: the shipped tsc is stricter than the pinned tsgo
+      # dev build and rejects v-flag regex literals under the repo's
+      # ES2022 target; the emitted JS is equivalent (pi runs on
+      # node >=22.19, which supports ES2024), and CLI flags override the
+      # tsconfig target without patching any package configs.
+      # ----------------------------------------------------------
+      if [ "$CRAFT_ARCH_BUILD_FOR" = riscv64 ]; then
+        npm install --no-save --ignore-scripts "typescript@7.0.2"
+        printf '%s\n' \
+          '#!/bin/sh' \
+          'exec node "$(dirname "$0")"/../typescript/lib/tsc.js --target es2024 "$@"' \
+          > node_modules/.bin/tsgo
+        chmod +x node_modules/.bin/tsgo
+      fi
 
       # ----------------------------------------------------------
       # Build all workspace packages with pi's plain (non-Bun) pipeline.
@@ -228,16 +262,23 @@ parts:
           arm64)
             _TUI_NATIVE_ARCH=arm64
             ;;
+          riscv64)
+            # pi-tui ships no riscv64 prebuild and its loader only knows
+            # x64/arm64; pi falls back to command-line clipboard tools
+            # (wl-clipboard ships in this snap). Nothing to copy.
+            ;;
         esac
-        _TUI_NATIVE_NODE="packages/tui/native/linux/prebuilds/linux-${_TUI_NATIVE_ARCH}/linux-platform-x11.node"
-        echo "Verifying pi-tui native clipboard helper: $_TUI_NATIVE_NODE"
-        test -f "$_TUI_NATIVE_NODE" || {
-          echo "ERROR: pi-tui native clipboard helper not found: $_TUI_NATIVE_NODE" >&2
-          echo "       upstream pi-tui packaging may have changed; update this copy step." >&2
-          exit 1
-        }
-        mkdir -p "${PI_HOME}/packages/tui/native/linux/prebuilds/linux-${_TUI_NATIVE_ARCH}"
-        cp -a "$_TUI_NATIVE_NODE" "${PI_HOME}/packages/tui/native/linux/prebuilds/linux-${_TUI_NATIVE_ARCH}/"
+        if [ -n "${_TUI_NATIVE_ARCH:-}" ]; then
+          _TUI_NATIVE_NODE="packages/tui/native/linux/prebuilds/linux-${_TUI_NATIVE_ARCH}/linux-platform-x11.node"
+          echo "Verifying pi-tui native clipboard helper: $_TUI_NATIVE_NODE"
+          test -f "$_TUI_NATIVE_NODE" || {
+            echo "ERROR: pi-tui native clipboard helper not found: $_TUI_NATIVE_NODE" >&2
+            echo "       upstream pi-tui packaging may have changed; update this copy step." >&2
+            exit 1
+          }
+          mkdir -p "${PI_HOME}/packages/tui/native/linux/prebuilds/linux-${_TUI_NATIVE_ARCH}"
+          cp -a "$_TUI_NATIVE_NODE" "${PI_HOME}/packages/tui/native/linux/prebuilds/linux-${_TUI_NATIVE_ARCH}/"
+        fi
       fi
 
       # node_modules/ links every workspace package via npm, not just the
@@ -296,6 +337,9 @@ parts:
           ;;
         arm64)
           _LDNAME=ld-linux-aarch64.so.1
+          ;;
+        riscv64)
+          _LDNAME=ld-linux-riscv64-lp64d.so.1
           ;;
       esac
       _RPATH='\$ORIGIN/../lib/'"$CRAFT_ARCH_TRIPLET_BUILD_FOR"':/snap/core26/current/lib/'"$CRAFT_ARCH_TRIPLET_BUILD_FOR"
