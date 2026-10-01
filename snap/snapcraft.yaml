@@ -244,13 +244,26 @@ parts:
       # ones in the runtime closure. Drop symlinks whose target package
       # was not shipped so the payload has no dead references — turning
       # the "new workspace package" failure mode above into a build error,
-      # not a runtime ERR_MODULE_NOT_FOUND.
-      find "${PI_HOME}/node_modules" -type l ! -exec test -e {} \; -delete
+      # not a runtime ERR_MODULE_NOT_FOUND. Run before coding-agent is
+      # copied: that also removes its now-dangling workspace link and
+      # .bin/pi (which points into dist/bundle, stripped below).
+      find "${PI_HOME}" -type l ! -exec test -e {} \; -delete
 
       mkdir -p "${PI_HOME}/packages/coding-agent"
       cp -a packages/coding-agent/dist packages/coding-agent/docs packages/coding-agent/examples \
         packages/coding-agent/package.json packages/coding-agent/README.md packages/coding-agent/CHANGELOG.md \
         "${PI_HOME}/packages/coding-agent/"
+
+      # npm nests a production dep under a workspace package's own
+      # node_modules/ when the root has an incompatible version (e.g.
+      # pi-ai's openai@7 next to a dev-only openai@6). Node resolves those
+      # from packages/<pkg>/node_modules, so ship them too — copying only
+      # the root node_modules dropped openai and crashed pi 0.99.
+      for pkg in $PACKAGES_TO_COPY; do
+        if [ -d "packages/${pkg}/node_modules" ]; then
+          cp -a "packages/${pkg}/node_modules" "${PI_HOME}/packages/${pkg}/"
+        fi
+      done
 
       # ----------------------------------------------------------
       # Strip build artifacts that are never loaded at runtime.

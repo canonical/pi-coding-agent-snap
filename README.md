@@ -49,15 +49,14 @@ container:
      `dist/modes/interactive/` and `dist/core/export-html/`)
 6. **`npm prune --omit=dev`** — drops devDependencies so only production deps ship
 7. **Assemble runtime payload** into `$SNAP/lib/pi/` — pruned `node_modules/`
-   plus `dist/` and `package.json`/`README.md` from each workspace package
-   the CLI needs. The set is *derived* from the actual `@earendil-works/*`
-   imports in the built `dist/` (see `snap/local/pi-workspace-packages.mjs`)
-   rather than hardcoded, so an upstream pi release that adds a new
-   workspace package cannot ship a dangling symlink again; dangling
-   workspace symlinks are deleted from `node_modules/` to keep the payload
-   self-consistent. Source maps, `.d.ts` type declarations, and the bundled
-   `dist/bundle` CLI duplicate are then stripped as they are never loaded
-   at runtime
+   plus `dist/`, `package.json`/`README.md`, and each workspace package's own
+   nested `node_modules/` when npm placed production deps there instead of
+   hoisting them (e.g. pi-ai's `openai@7`). The set is *derived* from the
+   actual `@earendil-works/*` imports in the built `dist/` (see
+   `snap/local/pi-workspace-packages.mjs`) rather than hardcoded, so an
+   upstream pi release that adds a new workspace package cannot ship a
+   dangling symlink again; dangling symlinks are deleted from the payload,
+   then maps, `.d.ts` files, and the `dist/bundle` duplicate are stripped
 8. **Bundle the Node.js runtime** at `$SNAP/node/bin/node`; the wrapper
    script execs it against `packages/coding-agent/dist/cli.js`
 9. **Install `wl-clipboard`** from Ubuntu package via `stage-packages` for
@@ -92,7 +91,7 @@ Pi's clipboard logic differs by display server — so we need **both** mechanism
 |---|---|---|
 | `node` runtime | Bundled Node.js executable | `$SNAP/node/bin/node` |
 | `cli.js` | pi CLI entry point (plain npm build output) | `packages/coding-agent/dist/cli.js` |
-| `node_modules/` | Pruned production dependencies | `npm ci` + `npm prune --omit=dev` |
+| `node_modules/` | Pruned production dependencies (incl. per-package nested ones) | `npm ci` + `npm prune --omit=dev` |
 | `package.json` | Version info | Staged from workspace package build output |
 | `photon_rs_bg.wasm` | Image processing (resize, format convert) | `@silvia-odwyer/photon-node` (resolved from its own `node_modules`) |
 | `dist/modes/interactive/theme/*.json` | Interactive mode themes | `src/modes/interactive/theme/` (copied by the plain `build` script's `copy-assets`) |
