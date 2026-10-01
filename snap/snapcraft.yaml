@@ -331,20 +331,29 @@ parts:
       - patchelf
     override-build: |
       craftctl default
+      # core26 ships the dynamic loader in /lib64 only on amd64
+      # (Ubuntu multiarch convention). arm64 and riscv64 have no lib64/
+      # directory at all: the loader lives at /lib/ld-linux-*.so.* via
+      # lib -> usr/lib. Pointing wl-copy/wl-paste at lib64 there yields
+      # binaries that fail to exec with ENOENT (verified against core26
+      # rev 463 arm64 / rev 466 riscv64: no lib64/ entry in either).
       case "$CRAFT_ARCH_BUILD_FOR" in
         amd64)
           _LDNAME=ld-linux-x86-64.so.2
+          _LDDIR=lib64
           ;;
         arm64)
           _LDNAME=ld-linux-aarch64.so.1
+          _LDDIR=lib
           ;;
         riscv64)
           _LDNAME=ld-linux-riscv64-lp64d.so.1
+          _LDDIR=lib
           ;;
       esac
       _RPATH='\$ORIGIN/../lib/'"$CRAFT_ARCH_TRIPLET_BUILD_FOR"':/snap/core26/current/lib/'"$CRAFT_ARCH_TRIPLET_BUILD_FOR"
       patchelf \
-        --set-interpreter /snap/core26/current/lib64/$_LDNAME \
+        --set-interpreter "/snap/core26/current/${_LDDIR}/$_LDNAME" \
         --set-rpath "$_RPATH" \
         $CRAFT_PART_INSTALL/usr/bin/wl-copy \
         $CRAFT_PART_INSTALL/usr/bin/wl-paste

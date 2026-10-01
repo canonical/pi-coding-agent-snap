@@ -11,6 +11,13 @@
 
 NODE="$SNAP/node/bin/node"
 CLI="$SNAP/lib/pi/packages/coding-agent/dist/cli.js"
+# Expose the snap-staged clipboard tools (wl-copy/wl-paste) to pi, which
+# spawns them by bare name. Classic snaps inherit the host PATH and
+# snapd adds nothing, so without this the staged binaries are unreachable
+# on hosts without a host-installed wl-clipboard. Prepend so the snap's
+# copies take precedence.
+PATH="$SNAP/usr/bin:$PATH"
+export PATH
 
 # Unset all environment variables starting with SNAP
 for var in $(env | cut -d= -f1 | grep '^SNAP'); do
