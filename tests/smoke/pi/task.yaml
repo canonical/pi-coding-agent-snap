@@ -59,6 +59,37 @@ execute: |
     # imports (snap/local/pi-workspace-packages.mjs); a dangling symlink
     # here means a package the runtime imports was not shipped (e.g.
     # @earendil-works/chord in pi 0.85.1, the reason this guard exists),
-    # which would crash the CLI with ERR_MODULE_NOT_FOUND.
-    test -z "$(find /snap/pi-coding-agent/current/lib/pi/node_modules -type l \
+    # which would crash the CLI with ERR_MODULE_NOT_FOUND. Check the whole
+    # payload because npm also nests workspace links under per-package
+    # node_modules/.
+    test -z "$(find /snap/pi-coding-agent/current/lib/pi -type l \
         ! -exec test -e {} \; -print -quit)"
+
+    # Every production dependency declared by a shipped workspace package
+    # must resolve from that package. npm nests a dep under the package's
+    # own node_modules/ when the root holds an incompatible version (e.g.
+    # pi-ai's openai@7); the assembly copies those nested dirs too. Shipping
+    # only the root node_modules dropped openai and crashed pi 0.99.
+    # @earendil-works/* deps are workspace packages covered above.
+    /snap/pi-coding-agent/current/node/bin/node -e '
+      const fs = require("fs");
+      const path = require("path");
+      const { createRequire } = require("module");
+      const PI = "/snap/pi-coding-agent/current/lib/pi";
+      let bad = false;
+      for (const pkg of fs.readdirSync(path.join(PI, "packages"))) {
+        const manifestPath = path.join(PI, "packages", pkg, "package.json");
+        if (!fs.existsSync(manifestPath)) continue;
+        const req = createRequire(manifestPath);
+        const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+        for (const dep of Object.keys(manifest.dependencies || {})) {
+          if (dep.startsWith("@earendil-works/")) continue;
+          try { req.resolve(dep); }
+          catch (e) {
+            console.error("packages/" + pkg + ": unresolved " + dep + " (" + (e.code || e.message) + ")");
+            bad = true;
+          }
+        }
+      }
+      process.exit(bad ? 1 : 0);
+    '
