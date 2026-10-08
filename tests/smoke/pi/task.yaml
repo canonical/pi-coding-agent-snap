@@ -57,7 +57,9 @@ execute: |
     # it is loaded relative to the installed package directory, never
     # from dist/, so the snap's assembly step must stage it explicitly.
     # Verify it shipped for the arch under test rather than assuming the
-    # per-package dist/package.json/README.md copy covered it.
+    # per-package dist/package.json/README.md copy covered it. riscv64
+    # ships no prebuild (pi falls back to wl-clipboard), so there the
+    # check inverts: the native subtree must be absent.
     case "$(uname -m)" in
         x86_64)
             _TUI_NATIVE_ARCH=x64
@@ -65,8 +67,24 @@ execute: |
         aarch64)
             _TUI_NATIVE_ARCH=arm64
             ;;
+        riscv64)
+            _TUI_NATIVE_ARCH=
+            ;;
     esac
-    test -e "/snap/pi-coding-agent/current/lib/pi/packages/tui/native/linux/prebuilds/linux-${_TUI_NATIVE_ARCH}/linux-platform-x11.node"
+    if [ -n "$_TUI_NATIVE_ARCH" ]; then
+        test -e "/snap/pi-coding-agent/current/lib/pi/packages/tui/native/linux/prebuilds/linux-${_TUI_NATIVE_ARCH}/linux-platform-x11.node"
+    else
+        test ! -e /snap/pi-coding-agent/current/lib/pi/packages/tui/native
+    fi
+
+    # The staged wl-clipboard tools must actually start: their ELF
+    # interpreter has to exist inside core26 (amd64 keeps it in lib64,
+    # arm64/riscv64 in lib — a wrong path fails at exec with ENOENT,
+    # which is how the arm64 stable snap shipped broken wl-copy).
+    # pi.wrapper puts $SNAP/usr/bin on PATH so pi finds these, not any
+    # host-installed copy.
+    /snap/pi-coding-agent/current/usr/bin/wl-copy --help > /dev/null
+    /snap/pi-coding-agent/current/usr/bin/wl-paste --help > /dev/null
 
     # Unused build artifacts are stripped from the payload: no source maps
     # or type declarations anywhere under lib/pi, and no bundled CLI
