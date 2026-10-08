@@ -19,6 +19,27 @@ execute: |
     snap run pi-coding-agent.pi --help 2>&1 | MATCH "pi"
     snap run pi-coding-agent.pi --version 2>&1 | MATCH "1.1.0"
 
+    # pi.wrapper arms an AppArmor onexec transition so node and anything it
+    # spawns do not inherit the snap's complain-mode label, which otherwise
+    # breaks output redirection of snaps launched by pi (fixes
+    # https://github.com/canonical/pi-coding-agent-snap/issues/26). A
+    # NODE_OPTIONS preload reports the labels of node and of a child, then
+    # exits before pi starts.
+    cat > /tmp/pi-label.js <<'EOF'
+    const fs = require("fs");
+    const cp = require("child_process");
+    const f = fs.existsSync("/proc/self/attr/apparmor/current")
+      ? "/proc/self/attr/apparmor/current" : "/proc/self/attr/current";
+    console.log("node: " + fs.readFileSync(f, "utf8").replace(/\0/g, "").trim());
+    console.log("child: " + cp.execFileSync("cat", [f]).toString().replace(/\0/g, "").trim());
+    process.exit(0);
+    EOF
+    NODE_OPTIONS=--require=/tmp/pi-label.js snap run pi-coding-agent.pi > pi-labels.txt
+    cat pi-labels.txt
+    MATCH '^node: unconfined$' < pi-labels.txt
+    MATCH '^child: unconfined$' < pi-labels.txt
+    rm -f /tmp/pi-label.js pi-labels.txt
+
     # Verify the new Node.js-runtime layout (fixes
     # https://github.com/canonical/pi-coding-agent-snap/issues/13: the
     # previous Bun-compiled binary hardcoded a 5-minute socket timeout).
