@@ -5,7 +5,8 @@ summary: Smoke test for the pi-coding-agent snap
 details: |
     This test verifies that the pi-coding-agent snap is properly installed,
     launches without crashing, and prints help output.
-    Tests both the default app (pi-coding-agent) and the pi alias target.
+    Tests both the default app (pi-coding-agent) and the pi alias target,
+    plus the bundled pi-acp ACP adapter (pi-coding-agent.pi-acp).
 
 execute: |
     # Verify the snap is installed.
@@ -39,6 +40,49 @@ execute: |
     MATCH '^child: unconfined$' < pi-labels.txt
     rm -f /tmp/pi-label.js pi-labels.txt
 
+    # The bundled pi-acp adapter answers an ACP initialize request on stdio.
+    # It exits once stdin closes, so hold stdin open briefly for the reply.
+    { printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{}}}'; sleep 5; } \
+        | timeout 60 snap run pi-coding-agent.pi-acp > pi-acp-init.txt
+    cat pi-acp-init.txt
+    MATCH '"protocolVersion":1' < pi-acp-init.txt
+    MATCH '"name":"pi-acp"' < pi-acp-init.txt
+    rm -f pi-acp-init.txt
+
+    # pi-acp.wrapper runs the adapter unconfined with SNAP_* unset, and puts
+    # the snap's `pi` shim first on PATH so the adapter drives the bundled
+    # pi. The shim must find pi.wrapper without $SNAP. Clear NODE_OPTIONS for
+    # children so this preload does not also run inside the spawned pi; a
+    # second preload instead reports the PATH pi itself (and so its bash
+    # tool) gets, which must not contain the shim directory.
+    cat > /tmp/pi-acp-child.js <<'EOF'
+    console.log("child-path: " + process.env.PATH);
+    process.exit(0);
+    EOF
+    cat > /tmp/pi-acp-env.js <<'EOF'
+    const fs = require("fs");
+    const cp = require("child_process");
+    const f = fs.existsSync("/proc/self/attr/apparmor/current")
+      ? "/proc/self/attr/apparmor/current" : "/proc/self/attr/current";
+    const env = { ...process.env, NODE_OPTIONS: "" };
+    const sh = (cmd) => cp.execFileSync("sh", ["-c", cmd], { env }).toString().trim();
+    console.log("node: " + fs.readFileSync(f, "utf8").replace(/\0/g, "").trim());
+    console.log("snap-env: " + Object.keys(process.env).filter((k) => k.startsWith("SNAP")).join(","));
+    console.log("pi: " + sh("command -v pi"));
+    console.log("version: " + sh("pi --version 2>&1"));
+    console.log(sh("NODE_OPTIONS=--require=/tmp/pi-acp-child.js pi"));
+    process.exit(0);
+    EOF
+    NODE_OPTIONS=--require=/tmp/pi-acp-env.js snap run pi-coding-agent.pi-acp > pi-acp-env.txt
+    cat pi-acp-env.txt
+    MATCH '^node: unconfined$' < pi-acp-env.txt
+    MATCH '^snap-env: $' < pi-acp-env.txt
+    MATCH '^pi: /snap/pi-coding-agent/[^/]+/lib/pi/packages/coding-agent/bin/pi$' < pi-acp-env.txt
+    grep '^version: ' pi-acp-env.txt | MATCH "1.4.0"
+    MATCH '^child-path: ' < pi-acp-env.txt
+    NOMATCH '^child-path: .*/lib/pi/packages/coding-agent/bin' < pi-acp-env.txt
+    rm -f /tmp/pi-acp-env.js /tmp/pi-acp-child.js pi-acp-env.txt
+
     # Verify the runtime layout: the snap bundles its own node executable
     # and runs packages/coding-agent/dist/cli.js; no bin/pi launcher exists.
     /snap/pi-coding-agent/current/node/bin/node --version 2>&1 | MATCH "v22"
@@ -48,6 +92,7 @@ execute: |
     # License texts for the redistributed upstream code must ship.
     test -e /snap/pi-coding-agent/current/node/LICENSE
     test -e /snap/pi-coding-agent/current/lib/pi/LICENSE
+    test -e /snap/pi-coding-agent/current/lib/pi-acp/LICENSE
 
     # X11 clipboard image-paste is a native prebuild bundled inside
     # @earendil-works/pi-tui; it is loaded relative to the installed
@@ -85,7 +130,7 @@ execute: |
     # Unused build artifacts are stripped from the payload: no source maps
     # or type declarations anywhere under lib/pi, and no bundled CLI
     # duplicate (pi.wrapper execs dist/cli.js directly).
-    test -z "$(find /snap/pi-coding-agent/current/lib/pi \( -name '*.map' -o -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' \) -print -quit)"
+    test -z "$(find /snap/pi-coding-agent/current/lib/pi /snap/pi-coding-agent/current/lib/pi-acp \( -name '*.map' -o -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' \) -print -quit)"
     test ! -e \
         /snap/pi-coding-agent/current/lib/pi/packages/coding-agent/dist/bundle
 
@@ -94,7 +139,7 @@ execute: |
     # dependencies (snap/local/pi-workspace-packages.mjs). Check the whole
     # payload because npm also nests workspace links under per-package
     # node_modules/.
-    test -z "$(find /snap/pi-coding-agent/current/lib/pi -type l \
+    test -z "$(find /snap/pi-coding-agent/current/lib/pi /snap/pi-coding-agent/current/lib/pi-acp -type l \
         ! -exec test -e {} \; -print -quit)"
 
     # Check every declared production dependency from the directory of the

@@ -18,10 +18,23 @@
         "snap/snapcraft\\.yaml"
       ],
       "matchStrings": [
-        "source-tag:\\s*v(?<currentValue>[^\\s]+)"
+        "source:\\s*https://github\\.com/earendil-works/pi\\s+source-type:\\s*git\\s+source-tag:\\s*v(?<currentValue>[^\\s]+)"
       ],
       "datasourceTemplate": "github-releases",
       "depNameTemplate": "earendil-works/pi",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "Update pi-acp version in snapcraft.yaml",
+      "managerFilePatterns": [
+        "snap/snapcraft\\.yaml"
+      ],
+      "matchStrings": [
+        "source:\\s*https://github\\.com/svkozak/pi-acp\\s+source-type:\\s*git\\s+source-tag:\\s*v(?<currentValue>[^\\s]+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "svkozak/pi-acp",
       "versioningTemplate": "semver"
     },
     {

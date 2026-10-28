@@ -1,0 +1,21 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: Canonical Ltd.
+# SPDX-License-Identifier: MIT
+#
+# Wrapper script for the bundled pi-acp adapter, which speaks the Agent
+# Client Protocol (ACP) on stdio for editors such as Zed and drives pi in
+# RPC mode. Like pi.wrapper, it unsets SNAP environment variables and execs
+# the bundled Node.js runtime against the adapter's entry point.
+
+. "$SNAP/bin/node-exec.sh"
+
+# pi-acp spawns `pi` by bare name (RPC sessions, --terminal-login, version
+# and changelog lookups). Put the snap's `pi` shim first on PATH so the
+# adapter always drives the pi bundled alongside it, even when no `pi`
+# alias is set up or another pi is installed on the host.
+# PI_ACP_PI_COMMAND still overrides this. The shim strips this entry again,
+# so it does not leak into the shells pi runs.
+PATH="$SNAP/lib/pi/packages/coding-agent/bin:$PATH"
+export PATH
+
+node_exec "$SNAP/lib/pi-acp/dist/index.js" "$@"

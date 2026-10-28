@@ -17,6 +17,10 @@ description: |
   built from the upstream pi repository. Bundling Node.js means no host
   Node.js install is required.
 
+  It also bundles pi-acp (https://github.com/svkozak/pi-acp), an Agent
+  Client Protocol (ACP) adapter that lets ACP clients such as the Zed
+  editor drive pi. Configure your client to run `pi-coding-agent.pi-acp`.
+
   The snap packaging is maintained separately at
   https://github.com/canonical/pi-coding-agent-snap
 license: MIT AND Apache-2.0
@@ -48,6 +52,8 @@ apps:
   pi:
     command: bin/pi.wrapper
     completer: usr/share/bash-completion/completions/pi.completion
+  pi-acp:
+    command: bin/pi-acp.wrapper
 
 parts:
   # ============================================================
@@ -315,6 +321,42 @@ parts:
       rm -rf "${PI_HOME}/packages/coding-agent/dist/bundle"
 
   # ============================================================
+  # pi-acp — ACP adapter for pi, built from source with the same
+  # Node.js toolchain and run by pi-acp.wrapper with the bundled node
+  # ============================================================
+  pi-acp:
+    after:
+      - nodejs
+    plugin: nil
+    source: https://github.com/svkozak/pi-acp
+    source-type: git
+    source-tag: v0.0.34
+    build-environment:
+      - PATH: "/usr/local/bin:${PATH}"
+    override-build: |
+      set -ex
+
+      # tsup bundles src/ into a single dist/index.js; its esbuild and
+      # rollup native binaries come from per-platform optional deps in
+      # the lockfile (including linux-riscv64), so no install scripts
+      # are needed.
+      npm ci --ignore-scripts
+      npm run build
+      npm prune --omit=dev --ignore-scripts
+
+      # The adapter locates its package.json by walking up from
+      # dist/index.js (for the ACP agentInfo version), so keep the npm
+      # package layout. Ship pi-acp's LICENSE (MIT, Sergii Kozak).
+      PI_ACP_HOME="${CRAFT_PART_INSTALL}/lib/pi-acp"
+      mkdir -p "${PI_ACP_HOME}"
+      cp -a dist node_modules package.json README.md LICENSE "${PI_ACP_HOME}/"
+
+      # Same runtime-unused artifacts stripped from lib/pi in pi-build.
+      find "${PI_ACP_HOME}" -type f \( \
+          -name '*.map' -o -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' \
+      \) -delete
+
+  # ============================================================
   # wl-clipboard — Wayland clipboard tools from Ubuntu package
   # Needed for clipboard support on Wayland (default display server).
   # pi uses wl-copy/wl-paste on Wayland; falls back to xclip otherwise.
@@ -365,16 +407,23 @@ parts:
         $CRAFT_PART_INSTALL/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/libwayland-client.so.0.*
 
   # ============================================================
-  # Configuration — wrapper script, bash completion
+  # Configuration — wrapper scripts, pi shim, bash completion
   # ============================================================
   pi-configuration:
     after:
       - pi-build
+      - pi-acp
     plugin: nil
     source: snap/local
     override-build: |
+      install -Dm644 "$CRAFT_PART_SRC"/node-exec.sh \
+        "$CRAFT_PART_INSTALL"/bin/node-exec.sh
       install -Dm755 "$CRAFT_PART_SRC"/pi.wrapper \
         "$CRAFT_PART_INSTALL"/bin/pi.wrapper
+      install -Dm755 "$CRAFT_PART_SRC"/pi-acp.wrapper \
+        "$CRAFT_PART_INSTALL"/bin/pi-acp.wrapper
+      install -Dm755 "$CRAFT_PART_SRC"/pi.shim \
+        "$CRAFT_PART_INSTALL"/lib/pi/packages/coding-agent/bin/pi
       install -Dm644 "$CRAFT_PART_SRC"/pi.completion \
         "$CRAFT_PART_INSTALL"/usr/share/bash-completion/completions/pi.completion
       install -Dm644 "$CRAFT_PART_SRC"/pi.completion \

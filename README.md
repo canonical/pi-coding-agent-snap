@@ -7,8 +7,23 @@ The snap packaging is modeled after [opencode-snap](https://github.com/canonical
 The snap is named **`pi-coding-agent`** with two apps:
 - `pi-coding-agent` — default app (runs as `pi-coding-agent`)
 - `pi` — alias target (runs as `pi-coding-agent.pi`; an alias from `pi` can be requested on the Snap Store forum)
+- `pi-acp` — the [pi-acp](https://github.com/svkozak/pi-acp) [Agent Client Protocol](https://agentclientprotocol.com) adapter (runs as `pi-coding-agent.pi-acp`), for driving pi from ACP clients such as Zed
 
 After the alias is granted, users can run just `pi`.
+
+To use pi from an ACP client, point it at `pi-coding-agent.pi-acp`; for
+example, in Zed's `settings.json`:
+
+```json
+{
+  "agent_servers": {
+    "pi": {
+      "command": "/snap/bin/pi-coding-agent.pi-acp",
+      "args": []
+    }
+  }
+}
+```
 
 ## What is pi?
 
@@ -63,7 +78,9 @@ container:
    script execs it against `packages/coding-agent/dist/cli.js`
 9. **Install `wl-clipboard`** from Ubuntu package via `stage-packages` for
    Wayland clipboard support
-10. **Install wrapper script + bash completion**
+10. **Build the pi-acp adapter** from source at a pinned tag into
+    `$SNAP/lib/pi-acp/`
+11. **Install wrapper scripts + bash completion**
 
 ### Parts in snapcraft.yaml
 
@@ -71,8 +88,9 @@ container:
 |---|---|---|
 | `nodejs` | `nil` | Download and extract Node.js 22.x prebuilt binary; stage it as the snap's runtime `node` executable |
 | `pi-build` | `nil` | Clone pi source, fetch pi-ai model data, `npm ci`, `npm run build:offline`, `npm prune --omit=dev`, assemble `lib/pi` payload |
+| `pi-acp` | `nil` | Clone pi-acp source, `npm ci`, `npm run build`, `npm prune --omit=dev`, assemble `lib/pi-acp` payload |
 | `wl-clipboard` | `nil` | Stage-package from Ubuntu for Wayland clipboard |
-| `pi-configuration` | `nil` | Install wrapper script and bash completion files |
+| `pi-configuration` | `nil` | Install wrapper scripts, pi-acp's `pi` shim, and bash completion files |
 
 ### Clipboard strategy
 
@@ -108,6 +126,7 @@ Version updates are handled by **Renovate** with custom regex managers — no cr
 
 - `source-tag: v<version>` in `snap/snapcraft.yaml` → watches `earendil-works/pi` GitHub releases
 - Expected version string in `tests/smoke/pi/task.yaml`
+- pi-acp's `source-tag` in `snap/snapcraft.yaml` → watches `svkozak/pi-acp` GitHub releases
 
 When a new upstream pi version is released, Renovate auto-creates a PR updating both locations.
 
@@ -117,7 +136,10 @@ When a new upstream pi version is released, Renovate auto-creates a PR updating 
 pi-coding-agent-snap/
 ├── snap/
 │   ├── local/
-│   │   ├── pi.wrapper              # Wrapper script (unsets SNAP_* env vars)
+│   │   ├── node-exec.sh            # Shared launcher (unsets SNAP_* env vars, execs node)
+│   │   ├── pi.wrapper              # Wrapper script for pi
+│   │   ├── pi-acp.wrapper          # Wrapper script for the pi-acp adapter
+│   │   ├── pi.shim                 # `pi` command on pi-acp's PATH
 │   │   └── pi.completion           # Bash completion
 │   └── snapcraft.yaml              # Snap build definition
 ├── tests/
@@ -188,7 +210,7 @@ See [AGENTS.md](AGENTS.md) for project-specific rules. The snap packaging is mai
 
 ## License
 
-MIT AND Apache-2.0 — see [LICENSE](LICENSE). The bundled pi code is MIT (upstream); the bundled Node.js runtime is MIT (Node.js contributors); the snap packaging files in this repository are Apache-2.0 (Canonical Ltd.).
+MIT AND Apache-2.0 — see [LICENSE](LICENSE). The bundled pi code is MIT (upstream); the bundled Node.js runtime is MIT (Node.js contributors); the bundled pi-acp adapter is MIT (Sergii Kozak); the snap packaging files in this repository are Apache-2.0 (Canonical Ltd.).
 
 ## See also
 

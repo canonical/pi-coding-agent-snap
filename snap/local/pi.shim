@@ -1,0 +1,18 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: Canonical Ltd.
+# SPDX-License-Identifier: MIT
+#
+# `pi` command for the bundled pi-acp adapter, which pi-acp.wrapper puts
+# first on PATH. Installed at $SNAP/lib/pi/packages/coding-agent/bin/pi:
+# pi-acp's /changelog looks for CHANGELOG.md two directories above the
+# resolved `pi`, which is the shipped coding-agent CHANGELOG.md here.
+#
+# pi-acp finds this script through PATH, so its directory is exactly the
+# entry pi-acp.wrapper added. Drop that entry again so the shells pi runs
+# do not find a `pi` pinned to this snap revision, and recover $SNAP
+# (pi-acp runs with SNAP_* unset) for pi.wrapper.
+_SHIM_DIR=$(cd "$(dirname "$0")" && pwd)
+PATH="${PATH#"$_SHIM_DIR":}"
+SNAP="${_SHIM_DIR%/lib/pi/packages/coding-agent/bin}"
+export PATH SNAP
+exec "$SNAP/bin/pi.wrapper" "$@"
