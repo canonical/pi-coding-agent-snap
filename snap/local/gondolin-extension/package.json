@@ -1,0 +1,18 @@
+{
+  "name": "pi-extension-gondolin",
+  "private": true,
+  "version": "0.0.0",
+  "description": "pi's Gondolin tool-routing extension, packaged by the pi-coding-agent snap's gondolin component",
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "dependencies": {
+    "@earendil-works/gondolin": "0.14.0"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

@@ -157,6 +157,11 @@ execute: |
     test ! -e \
         /snap/pi-coding-agent/current/lib/pi/packages/coding-agent/dist/bundle
 
+    # Gondolin ships only in the optional component; the build drops the copy
+    # npm hoists from pi's example workspace.
+    test -z "$(find /snap/pi-coding-agent/current/lib/pi/node_modules/@earendil-works \
+        -maxdepth 1 -name 'gondolin*' -print -quit)"
+
     # Every npm workspace symlink must resolve inside the payload. The
     # workspace package set is derived from compiled imports and production
     # dependencies (snap/local/pi-workspace-packages.mjs). Check the whole

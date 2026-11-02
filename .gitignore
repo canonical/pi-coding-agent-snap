@@ -1,3 +1,4 @@
 *.snap
 *.comp
 *.spread-reuse.yaml
+node_modules/

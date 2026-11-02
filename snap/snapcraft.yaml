@@ -58,6 +58,10 @@ apps:
   # the pi-acp component and explains how to install it when it is absent.
   pi-acp:
     command: bin/pi-acp.wrapper
+  # Likewise for pi-gondolin: the extension and the gondolin library live in
+  # the gondolin component.
+  pi-gondolin:
+    command: bin/pi-gondolin.wrapper
 
 components:
   pi-acp:
@@ -71,6 +75,24 @@ components:
       pi-acp (https://github.com/svkozak/pi-acp) speaks the Agent Client
       Protocol (ACP) on stdio so ACP clients such as the Zed editor can
       drive pi. Run it as `pi-coding-agent.pi-acp`.
+  gondolin:
+    type: standard
+    # adopt-info lets the gondolin-extension part set this from the version of
+    # the gondolin package it installs.
+    adopt-info: gondolin-extension
+    summary: Gondolin micro-VM sandbox for pi's built-in tools
+    description: |
+      Run pi's built-in tools (read, write, edit, bash, grep, find, ls) and
+      user `!` commands inside a local Linux micro-VM instead of on the host.
+      The directory pi was started in is mounted at /workspace in the guest;
+      other guest filesystem changes stay inside the VM.
+
+      The micro-VM is booted with the host QEMU installation (qemu-system-* and
+      qemu-img), so QEMU must be installed separately. Guest images (~330 MiB)
+      are downloaded on first use and cached in ~/.cache/gondolin.
+
+      Install with `snap install pi-coding-agent+gondolin` and launch with
+      `pi-gondolin` (or `pi-coding-agent.pi-gondolin`).
 
 parts:
   # ============================================================
@@ -247,6 +269,12 @@ parts:
       cp -a node_modules/. "${PI_HOME}/node_modules/"
       rm -rf "${PI_HOME}/node_modules/koffi"   # Windows-only clipboard helper
 
+      # npm hoists @earendil-works/gondolin (+ its ~20 MiB krun runner) from
+      # pi's example workspace into root node_modules; no shipped package needs
+      # it. The gondolin component owns that payload.
+      rm -rf "${PI_HOME}/node_modules/@earendil-works/gondolin" \
+             "${PI_HOME}"/node_modules/@earendil-works/gondolin-krun-runner-*
+
       # Ship pi's LICENSE (MIT, copyright earendil-works) next to the
       # bundled packages so the snap carries the upstream license text.
       cp LICENSE "${PI_HOME}/LICENSE"
@@ -378,6 +406,63 @@ parts:
       pi-acp: (component/pi-acp)
 
   # ============================================================
+  # Gondolin — optional component payload: pi's upstream
+  # tool-routing extension plus the gondolin library it imports
+  # ============================================================
+  gondolin-extension:
+    after:
+      - nodejs
+      - pi-build
+    plugin: nil
+    source: snap/local/gondolin-extension
+    build-environment:
+      - PATH: "/usr/local/bin:${PATH}"
+    override-build: |
+      set -ex
+
+      # Entry point from the pi checkout staged by pi-build, so it matches this
+      # pi release. The dependency set is pinned here, not taken from pi's
+      # example: it is reviewed like any other pinned dep and stays reproducible.
+      EXT_SRC="${CRAFT_STAGE}/lib/pi/packages/coding-agent/examples/extensions/gondolin/index.ts"
+      test -f "$EXT_SRC" || {
+        echo "ERROR: staged pi gondolin extension not found: $EXT_SRC" >&2
+        echo "       pi-build must keep staging packages/coding-agent/examples." >&2
+        exit 1
+      }
+
+      EXT_OUT="${CRAFT_PART_INSTALL}/lib/pi-gondolin"
+      mkdir -p "$EXT_OUT"
+      install -m 644 "$EXT_SRC" "$EXT_OUT/index.ts"
+      install -m 644 "$CRAFT_PART_SRC/package.json" \
+        "$CRAFT_PART_SRC/package-lock.json" \
+        "$EXT_OUT/"
+
+      # --omit=optional skips the krun runner (~20 MiB native, needs libkrun);
+      # qemu is the backend. --ignore-scripts keeps the install to file copies.
+      (
+        cd "$EXT_OUT"
+        npm ci --omit=dev --omit=optional --ignore-scripts --no-audit --no-fund
+      )
+
+      # Match lib/pi's lean payload: maps and type declarations are not loaded.
+      find "$EXT_OUT" -type f \( -name '*.map' -o -name '*.d.ts' \) -delete
+
+      # The extension comes from pi, so a gondolin version mismatch may mean an
+      # API mismatch. Surface it in the build log.
+      PINNED=$(node -p "require('$CRAFT_STAGE/lib/pi/packages/coding-agent/examples/extensions/gondolin/package.json').dependencies['@earendil-works/gondolin']")
+      INSTALLED=$(node -p "require('$EXT_OUT/node_modules/@earendil-works/gondolin/package.json').version")
+      if [ "$PINNED" != "$INSTALLED" ]; then
+        echo "WARNING: pi pins gondolin $PINNED, this component ships $INSTALLED" >&2
+        echo "         check the extension API, then update snap/local/gondolin-extension" >&2
+      fi
+
+      # Component version, adopted by `adopt-info` above. craftctl rejects
+      # hyphens in component names, which is why pi-acp declares its version.
+      craftctl set components.gondolin.version="$INSTALLED"
+    organize:
+      lib/pi-gondolin: (component/gondolin)/lib/pi/extensions/gondolin
+
+  # ============================================================
   # wl-clipboard — Wayland clipboard tools from Ubuntu package
   # Needed for clipboard support on Wayland (default display server).
   # pi uses wl-copy/wl-paste on Wayland; falls back to xclip otherwise.
@@ -444,6 +529,8 @@ parts:
         "$CRAFT_PART_INSTALL"/bin/pi-acp.wrapper
       install -Dm755 "$CRAFT_PART_SRC"/pi.shim \
         "$CRAFT_PART_INSTALL"/lib/pi/packages/coding-agent/bin/pi
+      install -Dm755 "$CRAFT_PART_SRC"/pi-gondolin.wrapper \
+        "$CRAFT_PART_INSTALL"/bin/pi-gondolin.wrapper
       install -Dm644 "$CRAFT_PART_SRC"/pi.completion \
         "$CRAFT_PART_INSTALL"/usr/share/bash-completion/completions/pi.completion
       install -Dm644 "$CRAFT_PART_SRC"/pi.completion \
