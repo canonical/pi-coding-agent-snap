@@ -13,8 +13,11 @@
 
 . "$SNAP/bin/node-exec.sh"
 
-PI_ACP_CLI="${SNAP_COMPONENTS:-}/pi-acp/dist/index.js"
-if [ -z "${SNAP_COMPONENTS:-}" ] || [ ! -e "$PI_ACP_CLI" ]; then
+# snapd only exports SNAP_COMPONENTS from 2.78; older releases mount
+# components at the same place, /snap/<instance>/components/<snap-revision>,
+# so derive it from SNAP (/snap/<instance>/<snap-revision>) there.
+PI_ACP_CLI="${SNAP_COMPONENTS:-${SNAP%/*}/components/$SNAP_REVISION}/pi-acp/dist/index.js"
+if [ ! -e "$PI_ACP_CLI" ]; then
     _SNAP_NAME="${SNAP_INSTANCE_NAME:-pi-coding-agent}"
     echo "error: the pi-acp component of the $_SNAP_NAME snap is not installed." >&2
     echo "Install it with: sudo snap install $_SNAP_NAME+pi-acp" >&2

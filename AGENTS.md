@@ -140,7 +140,9 @@ cannot set it. Renovate bumps it together with the part's `source-tag` (keep
 `version` directly after `type: standard`). The build produces
 `pi-coding-agent+pi-acp_<version>.comp`. Apps cannot live in components, so
 the `pi-acp` app, its wrapper and the shim stay in the snap; the wrapper
-exits with install instructions when the component is absent. CI already
+exits with install instructions when the component is absent. snapd only
+exports `$SNAP_COMPONENTS` from 2.78 (2.77 stable does not), so the wrapper
+falls back to `${SNAP%/*}/components/$SNAP_REVISION`, the same mount point. CI already
 packs, uploads (`snapcraft upload --component`) and spread-installs `.comp`
 files alongside the snap.
 

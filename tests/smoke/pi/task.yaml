@@ -58,6 +58,19 @@ execute: |
     MATCH '"name":"pi-acp"' < pi-acp-init.txt
     rm -f pi-acp-init.txt
 
+    # snapd before 2.78 does not export SNAP_COMPONENTS; pi-acp.wrapper must
+    # then derive the component path from SNAP and SNAP_REVISION. Run the
+    # installed wrapper directly with only those set to cover that path.
+    _REV=$(readlink /snap/pi-coding-agent/current)
+    { printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{}}}'; sleep 5; } \
+        | env -u SNAP_COMPONENTS SNAP="/snap/pi-coding-agent/$_REV" SNAP_REVISION="$_REV" \
+            SNAP_INSTANCE_NAME=pi-coding-agent \
+            timeout 60 /snap/pi-coding-agent/current/bin/pi-acp.wrapper > pi-acp-init.txt
+    cat pi-acp-init.txt
+    MATCH '"name":"pi-acp"' < pi-acp-init.txt
+    rm -f pi-acp-init.txt
+    unset _REV
+
     # pi-acp.wrapper runs the adapter unconfined with SNAP_* unset, and puts
     # the snap's `pi` shim first on PATH so the adapter drives the bundled
     # pi. The shim must find pi.wrapper without $SNAP. Clear NODE_OPTIONS for
