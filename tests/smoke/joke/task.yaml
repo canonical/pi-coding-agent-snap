@@ -1,0 +1,136 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Canonical Ltd.
+
+summary: Replay a recorded LLM exchange offline with mannequin
+details: |
+    This test replays a pre-recorded OpenAI-compatible API session with the
+    mannequin snap and checks that the pi-coding-agent snap prints the
+    recorded answer — entirely offline, with no API key and no network
+    access to a model backend.
+
+    The session under ./recordings/joke was captured once with
+    `mannequin record` while running
+
+        pi --provider mannequin --model replay-model --no-session \
+           --no-tools -p "Tell me a joke about AI"
+
+    from an empty directory. It was recorded against a local synthetic
+    OpenAI-compatible SSE mock rather than a real backend, so the fixture
+    carries no credentials and no third-party content; the exchange is
+    still exactly what pi sends and consumes for a one-shot prompt.
+
+    pi generates session titles locally, so unlike opencode a single
+    prompt produces exactly ONE exchange: POST /v1/chat/completions.
+    --no-tools keeps it at one request by making a tool-call round trip
+    impossible.
+
+    Mannequin serves responses FIFO per method+path+query and never
+    matches on request bodies, so replay only requires the same request
+    sequence. Body differences — pi embeds the working directory and the
+    versioned snap path in its system prompt — are logged as a warning and
+    the recorded response is still served.
+
+    The mannequin snap is strictly confined: it reads the recordings
+    through its auto-connected home interface, whose rules use AppArmor
+    owner matches. Spread delivers the project tree at /root/pi-coding-
+    agent-snap preserving the uid from the git checkout, hence the chown
+    in the global prepare. Mannequin has no riscv64 build, so this task
+    needs a guard if riscv64 spread systems are ever added.
+
+prepare: |
+    # mannequin is only needed by this task; install it here rather than in
+    # the global prepare so the other smoke tests don't pay for it.
+    snap install mannequin
+
+execute: |
+    # The assertion below pipes pi into MATCH, so a non-zero exit from pi
+    # must fail the test even when the expected text was already printed.
+    set -o pipefail
+
+    RECORDINGS_DIR="$PWD/recordings"
+    SESSION="joke"
+    PORT=8090
+
+    # The recorded answer (see recordings/joke/exchange-001/response.json).
+    PUNCHLINE="To get to the other side of the context window."
+
+    # Serve the recording offline as a transient systemd unit, so restore
+    # can stop it regardless of how this script ends. Use `snap run` rather
+    # than the /snap/bin symlink: on SELinux systems (Fedora) systemd is
+    # denied from exec'ing the /snap/bin -> /usr/bin/snap symlink directly
+    # (status=203/EXEC), while `snap run` goes through snapd's own exec path.
+    systemd-run --unit=mannequin-replay-joke --description="mannequin replay (joke)" \
+        --collect \
+        snap run mannequin replay -session "$SESSION" -port "$PORT" \
+            -recordings-dir "$RECORDINGS_DIR"
+
+    READY=0
+    for _ in $(seq 1 50); do
+        if (echo >"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null; then
+            READY=1
+            break
+        fi
+        sleep 0.2
+    done
+    if [ "$READY" != 1 ]; then
+        echo "ERROR: mannequin replay did not start listening on port $PORT" >&2
+        journalctl -u mannequin-replay-joke --no-pager >&2 || true
+        echo "--- kernel log (possible confinement denials) ---" >&2
+        journalctl -k --since "-1min" --no-pager >&2 || true
+        exit 1
+    fi
+
+    # Throw-away agent directory holding only models.json. This is
+    # user-level configuration, so pi needs no project trust, and the
+    # literal dummy key satisfies pi's requirement for one on an endpoint
+    # that ignores auth. The model entry exists only to name the provider
+    # model the recording was made with.
+    AGENT_DIR="$(mktemp -d)"
+    cat >"$AGENT_DIR/models.json" <<EOF
+    {
+      "\$schema": "https://pi.dev/schemas/models.schema.json",
+      "providers": {
+        "mannequin": {
+          "name": "mannequin replay",
+          "baseUrl": "http://127.0.0.1:$PORT/v1",
+          "api": "openai-completions",
+          "apiKey": "offline-replay",
+          "models": [
+            {
+              "id": "replay-model",
+              "name": "replay-model",
+              "reasoning": false,
+              "input": ["text"],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 32768,
+              "maxTokens": 1024
+            }
+          ]
+        }
+      }
+    }
+    EOF
+
+    # Run pi from an empty directory so no project resources are picked up.
+    # --no-session keeps state out of the way, --no-tools keeps the run at
+    # one request, and --offline plus the PI_* switches disable pi.dev
+    # version and catalog requests so the test is truly offline.
+    WORK="$(mktemp -d)"
+    cd "$WORK"
+    PI_CODING_AGENT_DIR="$AGENT_DIR" PI_OFFLINE=1 PI_SKIP_VERSION_CHECK=1 \
+        snap run pi-coding-agent.pi --provider mannequin \
+            --model replay-model --no-session --no-tools --offline \
+            -p "Tell me a joke about AI" 2>&1 \
+        | MATCH "$PUNCHLINE"
+
+restore: |
+    # Replay server logs are the main post-mortem source when a mismatch or
+    # a 502 (recording exhausted) is suspected; stop the unit either way.
+    journalctl -u mannequin-replay-joke --no-pager 2>&1 || true
+    systemctl stop mannequin-replay-joke 2>/dev/null || true
+    systemctl reset-failed mannequin-replay-joke 2>/dev/null || true

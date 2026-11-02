@@ -52,6 +52,8 @@ runtime for execution:
 | `spread.yaml` | Spread test backend config (image-garden adhoc backend) |
 | `.image-garden.mk` | image-garden cloud-init user-data templates (core26) |
 | `tests/smoke/pi/task.yaml` | Snap smoke tests, including per-package production dependency resolution checks |
+| `tests/smoke/joke/task.yaml` | Offline LLM replay test (mannequin) |
+| `tests/smoke/joke/recordings/joke/` | Recorded OpenAI-compatible session replayed by that test |
 | `tests/unit/pi-workspace-packages.test.mjs` | Regression test for the workspace selector (`node --test tests/unit/*.test.mjs`; not yet wired into CI) |
 | `.github/workflows/build.yml` | CI entry point; delegates to `tasteful-crafts.yml` |
 | `.github/workflows/tasteful-crafts.yml` | Reusable build → spread → publish orchestrator |
@@ -88,6 +90,23 @@ runtime for execution:
   systems, and Snap Store upload to `latest/edge` (branch) or
   `latest/candidate` (tag); `latest/stable` is reached via manual
   `snapcraft-promote`.
+
+## Tests
+
+- `tests/smoke/pi` — install, runtime layout, clipboard, payload checks.
+- `tests/smoke/joke` — installs the `mannequin` snap in its own `prepare:`,
+  serves `recordings/joke` on 127.0.0.1:8090 from a transient `systemd-run`
+  unit, points a throw-away `PI_CODING_AGENT_DIR/models.json` provider at it
+  and asserts that `pi -p` prints the recorded answer. No credentials are
+  committed: the recording was captured against a local synthetic
+  OpenAI-compatible SSE mock, and mannequin's request envelopes don't keep
+  headers.
+- The strictly-confined mannequin snap reads the recordings via its
+  auto-connected `home` interface, which uses AppArmor owner matches — hence
+  the `chown -R root:root` in `spread.yaml`'s global `prepare:` (spread's
+  file delivery preserves the uid from the git checkout).
+- mannequin is published for amd64 and arm64 only; adding riscv64 spread
+  systems needs a guard or a task-level `systems:` restriction.
 
 ## Version management
 
