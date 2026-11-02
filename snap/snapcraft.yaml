@@ -109,7 +109,7 @@ parts:
     plugin: nil
     source: https://github.com/earendil-works/pi
     source-type: git
-    source-tag: v1.4.0
+    source-tag: v1.5.0
     build-environment:
       - PATH: "/usr/local/bin:${PATH}"
     override-build: |
