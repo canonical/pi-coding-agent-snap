@@ -45,6 +45,8 @@ prepare: |
 
     # Install the snap that was copied into the test environment.
     snap install "$(ls ./pi-coding-agent_*.snap | sort -r | head -n 1)" --dangerous --classic
+    # And its optional pi-acp component, built alongside it.
+    snap install "$(ls ./pi-coding-agent+pi-acp_*.comp | sort -r | head -n 1)" --dangerous
 
 debug-each: |
     echo "Kernel and architecture:"

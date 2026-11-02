@@ -26,12 +26,13 @@
     },
     {
       "customType": "regex",
-      "description": "Update pi-acp version in snapcraft.yaml",
+      "description": "Update pi-acp source-tag and component version in snapcraft.yaml",
       "managerFilePatterns": [
         "snap/snapcraft\\.yaml"
       ],
       "matchStrings": [
-        "source:\\s*https://github\\.com/svkozak/pi-acp\\s+source-type:\\s*git\\s+source-tag:\\s*v(?<currentValue>[^\\s]+)"
+        "source:\\s*https://github\\.com/svkozak/pi-acp\\s+source-type:\\s*git\\s+source-tag:\\s*v(?<currentValue>[^\\s]+)",
+        "\\n  pi-acp:\\s+type:\\s*standard\\s+(?:#[^\\n]*\\s+)*version:\\s*\"(?<currentValue>[^\"]+)\""
       ],
       "datasourceTemplate": "github-releases",
       "depNameTemplate": "svkozak/pi-acp",

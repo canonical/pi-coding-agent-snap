@@ -2,12 +2,24 @@
 # SPDX-FileCopyrightText: Canonical Ltd.
 # SPDX-License-Identifier: MIT
 #
-# Wrapper script for the bundled pi-acp adapter, which speaks the Agent
-# Client Protocol (ACP) on stdio for editors such as Zed and drives pi in
-# RPC mode. Like pi.wrapper, it unsets SNAP environment variables and execs
+# Wrapper script for the pi-acp adapter, which speaks the Agent Client
+# Protocol (ACP) on stdio for editors such as Zed and drives pi in RPC
+# mode. Like pi.wrapper, it unsets SNAP environment variables and execs
 # the bundled Node.js runtime against the adapter's entry point.
+#
+# The adapter itself ships in the optional pi-acp component, mounted under
+# $SNAP_COMPONENTS; apps cannot live in a component, so this wrapper is in
+# the snap and reports how to install the component when it is missing.
 
 . "$SNAP/bin/node-exec.sh"
+
+PI_ACP_CLI="${SNAP_COMPONENTS:-}/pi-acp/dist/index.js"
+if [ -z "${SNAP_COMPONENTS:-}" ] || [ ! -e "$PI_ACP_CLI" ]; then
+    _SNAP_NAME="${SNAP_INSTANCE_NAME:-pi-coding-agent}"
+    echo "error: the pi-acp component of the $_SNAP_NAME snap is not installed." >&2
+    echo "Install it with: sudo snap install $_SNAP_NAME+pi-acp" >&2
+    exit 1
+fi
 
 # pi-acp spawns `pi` by bare name (RPC sessions, --terminal-login, version
 # and changelog lookups). Put the snap's `pi` shim first on PATH so the
@@ -18,4 +30,4 @@
 PATH="$SNAP/lib/pi/packages/coding-agent/bin:$PATH"
 export PATH
 
-node_exec "$SNAP/lib/pi-acp/dist/index.js" "$@"
+node_exec "$PI_ACP_CLI" "$@"

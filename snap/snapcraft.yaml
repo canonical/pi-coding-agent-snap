@@ -17,9 +17,11 @@ description: |
   built from the upstream pi repository. Bundling Node.js means no host
   Node.js install is required.
 
-  It also bundles pi-acp (https://github.com/svkozak/pi-acp), an Agent
-  Client Protocol (ACP) adapter that lets ACP clients such as the Zed
-  editor drive pi. Configure your client to run `pi-coding-agent.pi-acp`.
+  The optional pi-acp component (https://github.com/svkozak/pi-acp) is an
+  Agent Client Protocol (ACP) adapter that lets ACP clients such as the
+  Zed editor drive pi. Install it with
+  `sudo snap install pi-coding-agent+pi-acp` and configure your client
+  to run `pi-coding-agent.pi-acp`.
 
   The snap packaging is maintained separately at
   https://github.com/canonical/pi-coding-agent-snap
@@ -52,8 +54,23 @@ apps:
   pi:
     command: bin/pi.wrapper
     completer: usr/share/bash-completion/completions/pi.completion
+  # Apps cannot live in a component; pi-acp.wrapper runs the adapter from
+  # the pi-acp component and explains how to install it when it is absent.
   pi-acp:
     command: bin/pi-acp.wrapper
+
+components:
+  pi-acp:
+    type: standard
+    # Static, not adopt-info: craftctl rejects the hyphen in
+    # `components.pi-acp.version`. Renovate bumps this together with the
+    # pi-acp part's source-tag; keep it directly after `type`.
+    version: "0.0.34"
+    summary: ACP adapter for pi
+    description: |
+      pi-acp (https://github.com/svkozak/pi-acp) speaks the Agent Client
+      Protocol (ACP) on stdio so ACP clients such as the Zed editor can
+      drive pi. Run it as `pi-coding-agent.pi-acp`.
 
 parts:
   # ============================================================
@@ -322,7 +339,8 @@ parts:
 
   # ============================================================
   # pi-acp — ACP adapter for pi, built from source with the same
-  # Node.js toolchain and run by pi-acp.wrapper with the bundled node
+  # Node.js toolchain into the pi-acp component, and run by
+  # pi-acp.wrapper (in the snap) with the bundled node
   # ============================================================
   pi-acp:
     after:
@@ -346,8 +364,9 @@ parts:
 
       # The adapter locates its package.json by walking up from
       # dist/index.js (for the ACP agentInfo version), so keep the npm
-      # package layout. Ship pi-acp's LICENSE (MIT, Sergii Kozak).
-      PI_ACP_HOME="${CRAFT_PART_INSTALL}/lib/pi-acp"
+      # package layout; organize below makes it the component root.
+      # Ship pi-acp's LICENSE (MIT, Sergii Kozak).
+      PI_ACP_HOME="${CRAFT_PART_INSTALL}/pi-acp"
       mkdir -p "${PI_ACP_HOME}"
       cp -a dist node_modules package.json README.md LICENSE "${PI_ACP_HOME}/"
 
@@ -355,6 +374,8 @@ parts:
       find "${PI_ACP_HOME}" -type f \( \
           -name '*.map' -o -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' \
       \) -delete
+    organize:
+      pi-acp: (component/pi-acp)
 
   # ============================================================
   # wl-clipboard — Wayland clipboard tools from Ubuntu package
@@ -412,7 +433,6 @@ parts:
   pi-configuration:
     after:
       - pi-build
-      - pi-acp
     plugin: nil
     source: snap/local
     override-build: |

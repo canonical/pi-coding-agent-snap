@@ -40,8 +40,9 @@ runtime for execution:
    clipboard support
 10. Build the [pi-acp](https://github.com/svkozak/pi-acp) ACP adapter from
     source at a pinned `source-tag` (`npm ci` → `npm run build` → `npm
-    prune --omit=dev`) into `$SNAP/lib/pi-acp/`; it runs as the `pi-acp` app
-    on the same bundled node
+    prune --omit=dev`) into the optional `pi-acp` snap component (mounted at
+    `$SNAP_COMPONENTS/pi-acp/`); it runs as the `pi-acp` app on the same
+    bundled node
 11. Install wrapper scripts, the `pi` shim for pi-acp + bash completion
 
 ## Key files
@@ -50,7 +51,7 @@ runtime for execution:
 |---|---|
 | `snap/snapcraft.yaml` | Snap build definition with 5 parts |
 | `snap/local/pi.wrapper` | Wrapper for pi |
-| `snap/local/pi-acp.wrapper` | Wrapper for the pi-acp adapter; puts `pi.shim` first on `PATH` |
+| `snap/local/pi-acp.wrapper` | Wrapper for the pi-acp adapter; runs it from `$SNAP_COMPONENTS/pi-acp` (or explains how to install the component), puts `pi.shim` first on `PATH` |
 | `snap/local/node-exec.sh` | Shared launcher sourced by both wrappers: AppArmor onexec, unsets `SNAP_*`, riscv64 undici fix, execs bundled node |
 | `snap/local/pi.shim` | `pi` command for pi-acp (installed as `lib/pi/packages/coding-agent/bin/pi`); drops itself from `PATH`, recovers `$SNAP`, execs `pi.wrapper` |
 | `snap/local/pi.completion` | Bash completion for `pi` and `pi-coding-agent` |
@@ -130,6 +131,19 @@ adjacent and in that order.
 
 ## pi-acp
 
+pi-acp ships as the optional `pi-acp` snap component
+(`snap install pi-coding-agent+pi-acp`), built into the component by
+`organize: {pi-acp: (component/pi-acp)}` so the component root is the npm
+package root. Its `version` is set statically in `components:` because
+craftctl rejects the hyphen in `components.pi-acp.version`, so `adopt-info`
+cannot set it. Renovate bumps it together with the part's `source-tag` (keep
+`version` directly after `type: standard`). The build produces
+`pi-coding-agent+pi-acp_<version>.comp`. Apps cannot live in components, so
+the `pi-acp` app, its wrapper and the shim stay in the snap; the wrapper
+exits with install instructions when the component is absent. CI already
+packs, uploads (`snapcraft upload --component`) and spread-installs `.comp`
+files alongside the snap.
+
 pi-acp spawns `pi` by bare name (`pi --mode rpc`, `--terminal-login`,
 `pi --version`, and `which pi` for `/changelog`). `pi-acp.wrapper`
 prepends `$SNAP/lib/pi/packages/coding-agent/bin` (holding `pi.shim`) to
@@ -149,4 +163,4 @@ Pi needs both clipboard mechanisms:
 
 ## License
 
-MIT AND Apache-2.0. The bundled pi code is MIT (upstream); the bundled Node.js runtime is MIT (Node.js contributors); the bundled pi-acp adapter is MIT (Sergii Kozak); the snap packaging files in this repository are Apache-2.0 (Canonical Ltd.).
+MIT AND Apache-2.0. The bundled pi code is MIT (upstream); the bundled Node.js runtime is MIT (Node.js contributors); the pi-acp adapter component is MIT (Sergii Kozak); the snap packaging files in this repository are Apache-2.0 (Canonical Ltd.).
