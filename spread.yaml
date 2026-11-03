@@ -37,6 +37,12 @@ exclude:
 path: /root/pi-coding-agent-snap
 
 prepare: |
+    # Spread's file delivery preserves the uid from the git checkout, which
+    # is typically not root. Make the whole project tree root-owned so that
+    # strictly-confined snaps (mannequin, via its auto-connected home
+    # interface) can read the recordings through AppArmor's owner match.
+    chown -R root:root /root/pi-coding-agent-snap
+
     # Install the snap that was copied into the test environment.
     snap install "$(ls ./pi-coding-agent_*.snap | sort -r | head -n 1)" --dangerous --classic
 
