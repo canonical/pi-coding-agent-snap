@@ -100,7 +100,8 @@ execute: |
     MATCH '^node: unconfined$' < pi-acp-env.txt
     MATCH '^snap-env: $' < pi-acp-env.txt
     MATCH '^pi: /snap/pi-coding-agent/[^/]+/lib/pi/packages/coding-agent/bin/pi$' < pi-acp-env.txt
-    grep '^version: ' pi-acp-env.txt | MATCH "1.4.0"
+    # The `pi` that pi-acp finds is the snap's own pi, not just any pi.
+    test "$(sed -n 's/^version: //p' pi-acp-env.txt)" = "$(snap run pi-coding-agent --version 2>&1)"
     MATCH '^child-path: ' < pi-acp-env.txt
     NOMATCH '^child-path: .*/lib/pi/packages/coding-agent/bin' < pi-acp-env.txt
     rm -f /tmp/pi-acp-env.js /tmp/pi-acp-child.js pi-acp-env.txt
