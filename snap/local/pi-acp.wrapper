@@ -1,0 +1,36 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: Canonical Ltd.
+# SPDX-License-Identifier: MIT
+#
+# Wrapper script for the pi-acp adapter, which speaks the Agent Client
+# Protocol (ACP) on stdio for editors such as Zed and drives pi in RPC
+# mode. Like pi.wrapper, it unsets SNAP environment variables and execs
+# the bundled Node.js runtime against the adapter's entry point.
+#
+# The adapter itself ships in the optional pi-acp component, mounted under
+# $SNAP_COMPONENTS; apps cannot live in a component, so this wrapper is in
+# the snap and reports how to install the component when it is missing.
+
+. "$SNAP/bin/node-exec.sh"
+
+# snapd only exports SNAP_COMPONENTS from 2.78; older releases mount
+# components at the same place, /snap/<instance>/components/<snap-revision>,
+# so derive it from SNAP (/snap/<instance>/<snap-revision>) there.
+PI_ACP_CLI="${SNAP_COMPONENTS:-${SNAP%/*}/components/$SNAP_REVISION}/pi-acp/dist/index.js"
+if [ ! -e "$PI_ACP_CLI" ]; then
+    _SNAP_NAME="${SNAP_INSTANCE_NAME:-pi-coding-agent}"
+    echo "error: the pi-acp component of the $_SNAP_NAME snap is not installed." >&2
+    echo "Install it with: sudo snap install $_SNAP_NAME+pi-acp" >&2
+    exit 1
+fi
+
+# pi-acp spawns `pi` by bare name (RPC sessions, --terminal-login, version
+# and changelog lookups). Put the snap's `pi` shim first on PATH so the
+# adapter always drives the pi bundled alongside it, even when no `pi`
+# alias is set up or another pi is installed on the host.
+# PI_ACP_PI_COMMAND still overrides this. The shim strips this entry again,
+# so it does not leak into the shells pi runs.
+PATH="$SNAP/lib/pi/packages/coding-agent/bin:$PATH"
+export PATH
+
+node_exec "$PI_ACP_CLI" "$@"

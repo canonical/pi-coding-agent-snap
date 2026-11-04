@@ -38,14 +38,22 @@ runtime for execution:
    `pi.wrapper` execs it against `packages/coding-agent/dist/cli.js`
 9. Install `wl-clipboard` via `stage-packages` from Ubuntu for Wayland
    clipboard support
-10. Install wrapper script + bash completion
+10. Build the [pi-acp](https://github.com/svkozak/pi-acp) ACP adapter from
+    source at a pinned `source-tag` (`npm ci` → `npm run build` → `npm
+    prune --omit=dev`) into the optional `pi-acp` snap component (mounted at
+    `$SNAP_COMPONENTS/pi-acp/`); it runs as the `pi-acp` app on the same
+    bundled node
+11. Install wrapper scripts, the `pi` shim for pi-acp + bash completion
 
 ## Key files
 
 | File | Purpose |
 |---|---|
-| `snap/snapcraft.yaml` | Snap build definition with 4 parts |
-| `snap/local/pi.wrapper` | Wrapper that unsets `SNAP_*` env vars |
+| `snap/snapcraft.yaml` | Snap build definition with 5 parts |
+| `snap/local/pi.wrapper` | Wrapper for pi |
+| `snap/local/pi-acp.wrapper` | Wrapper for the pi-acp adapter; runs it from `$SNAP_COMPONENTS/pi-acp` (or explains how to install the component), puts `pi.shim` first on `PATH` |
+| `snap/local/node-exec.sh` | Shared launcher sourced by both wrappers: AppArmor onexec, unsets `SNAP_*`, riscv64 undici fix, execs bundled node |
+| `snap/local/pi.shim` | `pi` command for pi-acp (installed as `lib/pi/packages/coding-agent/bin/pi`); drops itself from `PATH`, recovers `$SNAP`, execs `pi.wrapper` |
 | `snap/local/pi.completion` | Bash completion for `pi` and `pi-coding-agent` |
 | `snap/local/pi-workspace-packages.mjs` | Derives the workspace packages to ship from compiled imports and transitive production dependencies |
 | `renovate.json` | Custom regex managers for version updates |
@@ -84,7 +92,7 @@ runtime for execution:
   pins tsgo, which has no linux-riscv64 binary, so pi-build installs the
   shipped `typescript@7.0.2` (which does ship one) and shims `tsgo` to its
   `tsc --target es2024`. llhttp's WASM SIMD build misparses HTTP/1.1
-  responses on riscv64, so `pi.wrapper` sets `UNDICI_NO_WASM_SIMD=1` there.
+  responses on riscv64, so `node-exec.sh` sets `UNDICI_NO_WASM_SIMD=1` there.
 - **CI pipeline**: `build.yml` → `tasteful-crafts.yml` orchestrates snap build
   (LXD), image-garden spread integration tests across Ubuntu/Debian cloud
   systems, and Snap Store upload to `latest/edge` (branch) or
@@ -116,6 +124,37 @@ Renovate auto-creates PRs when new upstream releases are detected.
 Update the version by changing `source-tag` in `snap/snapcraft.yaml` AND
 the expected version in `tests/smoke/pi/task.yaml`.
 
+pi-acp is pinned separately via its own `source-tag` (Renovate watches
+`svkozak/pi-acp` releases). The Renovate and `release.yml` regexes anchor on
+each part's `source:` URL, so keep `source`, `source-type` and `source-tag`
+adjacent and in that order.
+
+## pi-acp
+
+pi-acp ships as the optional `pi-acp` snap component
+(`snap install pi-coding-agent+pi-acp`), built into the component by
+`organize: {pi-acp: (component/pi-acp)}` so the component root is the npm
+package root. Its `version` is set statically in `components:` because
+craftctl rejects the hyphen in `components.pi-acp.version`, so `adopt-info`
+cannot set it. Renovate bumps it together with the part's `source-tag` (keep
+`version` directly after `type: standard`). The build produces
+`pi-coding-agent+pi-acp_<version>.comp`. Apps cannot live in components, so
+the `pi-acp` app, its wrapper and the shim stay in the snap; the wrapper
+exits with install instructions when the component is absent. snapd only
+exports `$SNAP_COMPONENTS` from 2.78 (2.77 stable does not), so the wrapper
+falls back to `${SNAP%/*}/components/$SNAP_REVISION`, the same mount point. CI already
+packs, uploads (`snapcraft upload --component`) and spread-installs `.comp`
+files alongside the snap.
+
+pi-acp spawns `pi` by bare name (`pi --mode rpc`, `--terminal-login`,
+`pi --version`, and `which pi` for `/changelog`). `pi-acp.wrapper`
+prepends `$SNAP/lib/pi/packages/coding-agent/bin` (holding `pi.shim`) to
+`PATH`. pi-acp runs with `SNAP_*` unset, but the shim's own directory is
+exactly that `PATH` entry, so the shim strips it from `PATH` (keeping it
+out of the shells pi runs), recovers `$SNAP` by removing the fixed suffix,
+and execs `pi.wrapper`. The shim lives two levels below coding-agent so
+`/changelog` finds the shipped `CHANGELOG.md`.
+
 ## Clipboard strategy
 
 Pi needs both clipboard mechanisms:
@@ -126,4 +165,4 @@ Pi needs both clipboard mechanisms:
 
 ## License
 
-MIT AND Apache-2.0. The bundled pi code is MIT (upstream); the bundled Node.js runtime is MIT (Node.js contributors); the snap packaging files in this repository are Apache-2.0 (Canonical Ltd.).
+MIT AND Apache-2.0. The bundled pi code is MIT (upstream); the bundled Node.js runtime is MIT (Node.js contributors); the pi-acp adapter component is MIT (Sergii Kozak); the snap packaging files in this repository are Apache-2.0 (Canonical Ltd.).

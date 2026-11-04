@@ -5,7 +5,9 @@ summary: Smoke test for the pi-coding-agent snap
 details: |
     This test verifies that the pi-coding-agent snap is properly installed,
     launches without crashing, and prints help output.
-    Tests both the default app (pi-coding-agent) and the pi alias target.
+    Tests both the default app (pi-coding-agent) and the pi alias target,
+    plus the pi-acp ACP adapter (pi-coding-agent.pi-acp) from the optional
+    pi-acp component.
 
 execute: |
     # Verify the snap is installed.
@@ -39,6 +41,71 @@ execute: |
     MATCH '^child: unconfined$' < pi-labels.txt
     rm -f /tmp/pi-label.js pi-labels.txt
 
+    # pi-acp ships as a component, mounted per snap revision under
+    # $SNAP_COMPONENTS (/snap/<snap>/components/<snap-revision>/<component>),
+    # not inside the snap itself.
+    snap components pi-coding-agent | MATCH '^pi-coding-agent\+pi-acp +installed'
+    PI_ACP=/snap/pi-coding-agent/components/$(readlink /snap/pi-coding-agent/current)/pi-acp
+    test -e "$PI_ACP/dist/index.js"
+    test ! -e /snap/pi-coding-agent/current/lib/pi-acp
+
+    # The pi-acp adapter answers an ACP initialize request on stdio.
+    # It exits once stdin closes, so hold stdin open briefly for the reply.
+    { printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{}}}'; sleep 5; } \
+        | timeout 60 snap run pi-coding-agent.pi-acp > pi-acp-init.txt
+    cat pi-acp-init.txt
+    MATCH '"protocolVersion":1' < pi-acp-init.txt
+    MATCH '"name":"pi-acp"' < pi-acp-init.txt
+    rm -f pi-acp-init.txt
+
+    # snapd before 2.78 does not export SNAP_COMPONENTS; pi-acp.wrapper must
+    # then derive the component path from SNAP and SNAP_REVISION. Run the
+    # installed wrapper directly with only those set to cover that path.
+    _REV=$(readlink /snap/pi-coding-agent/current)
+    { printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{}}}'; sleep 5; } \
+        | env -u SNAP_COMPONENTS SNAP="/snap/pi-coding-agent/$_REV" SNAP_REVISION="$_REV" \
+            SNAP_INSTANCE_NAME=pi-coding-agent \
+            timeout 60 /snap/pi-coding-agent/current/bin/pi-acp.wrapper > pi-acp-init.txt
+    cat pi-acp-init.txt
+    MATCH '"name":"pi-acp"' < pi-acp-init.txt
+    rm -f pi-acp-init.txt
+    unset _REV
+
+    # pi-acp.wrapper runs the adapter unconfined with SNAP_* unset, and puts
+    # the snap's `pi` shim first on PATH so the adapter drives the bundled
+    # pi. The shim must find pi.wrapper without $SNAP. Clear NODE_OPTIONS for
+    # children so this preload does not also run inside the spawned pi; a
+    # second preload instead reports the PATH pi itself (and so its bash
+    # tool) gets, which must not contain the shim directory.
+    cat > /tmp/pi-acp-child.js <<'EOF'
+    console.log("child-path: " + process.env.PATH);
+    process.exit(0);
+    EOF
+    cat > /tmp/pi-acp-env.js <<'EOF'
+    const fs = require("fs");
+    const cp = require("child_process");
+    const f = fs.existsSync("/proc/self/attr/apparmor/current")
+      ? "/proc/self/attr/apparmor/current" : "/proc/self/attr/current";
+    const env = { ...process.env, NODE_OPTIONS: "" };
+    const sh = (cmd) => cp.execFileSync("sh", ["-c", cmd], { env }).toString().trim();
+    console.log("node: " + fs.readFileSync(f, "utf8").replace(/\0/g, "").trim());
+    console.log("snap-env: " + Object.keys(process.env).filter((k) => k.startsWith("SNAP")).join(","));
+    console.log("pi: " + sh("command -v pi"));
+    console.log("version: " + sh("pi --version 2>&1"));
+    console.log(sh("NODE_OPTIONS=--require=/tmp/pi-acp-child.js pi"));
+    process.exit(0);
+    EOF
+    NODE_OPTIONS=--require=/tmp/pi-acp-env.js snap run pi-coding-agent.pi-acp > pi-acp-env.txt
+    cat pi-acp-env.txt
+    MATCH '^node: unconfined$' < pi-acp-env.txt
+    MATCH '^snap-env: $' < pi-acp-env.txt
+    MATCH '^pi: /snap/pi-coding-agent/[^/]+/lib/pi/packages/coding-agent/bin/pi$' < pi-acp-env.txt
+    # The `pi` that pi-acp finds is the snap's own pi, not just any pi.
+    test "$(sed -n 's/^version: //p' pi-acp-env.txt)" = "$(snap run pi-coding-agent --version 2>&1)"
+    MATCH '^child-path: ' < pi-acp-env.txt
+    NOMATCH '^child-path: .*/lib/pi/packages/coding-agent/bin' < pi-acp-env.txt
+    rm -f /tmp/pi-acp-env.js /tmp/pi-acp-child.js pi-acp-env.txt
+
     # Verify the runtime layout: the snap bundles its own node executable
     # and runs packages/coding-agent/dist/cli.js; no bin/pi launcher exists.
     /snap/pi-coding-agent/current/node/bin/node --version 2>&1 | MATCH "v22"
@@ -48,6 +115,7 @@ execute: |
     # License texts for the redistributed upstream code must ship.
     test -e /snap/pi-coding-agent/current/node/LICENSE
     test -e /snap/pi-coding-agent/current/lib/pi/LICENSE
+    test -e "$PI_ACP/LICENSE"
 
     # X11 clipboard image-paste is a native prebuild bundled inside
     # @earendil-works/pi-tui; it is loaded relative to the installed
@@ -85,7 +153,7 @@ execute: |
     # Unused build artifacts are stripped from the payload: no source maps
     # or type declarations anywhere under lib/pi, and no bundled CLI
     # duplicate (pi.wrapper execs dist/cli.js directly).
-    test -z "$(find /snap/pi-coding-agent/current/lib/pi \( -name '*.map' -o -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' \) -print -quit)"
+    test -z "$(find /snap/pi-coding-agent/current/lib/pi "$PI_ACP/" \( -name '*.map' -o -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' \) -print -quit)"
     test ! -e \
         /snap/pi-coding-agent/current/lib/pi/packages/coding-agent/dist/bundle
 
@@ -94,7 +162,7 @@ execute: |
     # dependencies (snap/local/pi-workspace-packages.mjs). Check the whole
     # payload because npm also nests workspace links under per-package
     # node_modules/.
-    test -z "$(find /snap/pi-coding-agent/current/lib/pi -type l \
+    test -z "$(find /snap/pi-coding-agent/current/lib/pi "$PI_ACP/" -type l \
         ! -exec test -e {} \; -print -quit)"
 
     # Check every declared production dependency from the directory of the
@@ -136,3 +204,16 @@ execute: |
         ') || exit 1
     done
     unset PI NODE
+
+    # Without the component, the pi-acp app explains how to install it
+    # instead of failing obscurely. Reinstall it afterwards.
+    snap remove pi-coding-agent+pi-acp
+    if snap run pi-coding-agent.pi-acp < /dev/null > pi-acp-missing.txt 2>&1; then
+        echo "pi-acp unexpectedly ran without its component" >&2
+        exit 1
+    fi
+    cat pi-acp-missing.txt
+    MATCH 'snap install pi-coding-agent\+pi-acp' < pi-acp-missing.txt
+    rm -f pi-acp-missing.txt
+    snap install "$(ls "$SPREAD_PATH"/pi-coding-agent+pi-acp_*.comp | sort -r | head -n 1)" --dangerous
+    unset PI_ACP
