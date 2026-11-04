@@ -67,14 +67,7 @@ container:
      step nests themes, UI assets, and export templates under
      `dist/modes/interactive/` and `dist/core/export-html/`)
 6. **`npm prune --omit=dev`** — drops devDependencies so only production deps ship
-8. **Drop devDependencies** — `npm prune --omit=dev --ignore-scripts` so only production deps ship
-9. **Assemble the gondolin component payload** (dedicated `gondolin-extension`
-   part) — take pi's upstream Gondolin extension `index.ts` from the checkout
-   `pi-build` staged, install the pinned `@earendil-works/gondolin` dependency
-   set from `snap/local/gondolin-extension/` with
-   `npm ci --omit=dev --omit=optional`, strip source maps/type declarations,
-   and organize it into the optional `gondolin` component
-10. **Assemble the main runtime payload** into `$SNAP/lib/pi/` — pruned `node_modules/`
+7. **Assemble the runtime payload** into `$SNAP/lib/pi/` — pruned `node_modules/`
    plus `dist/`, `package.json`/`README.md`, and each workspace package's own
    nested `node_modules/` when npm placed production deps there instead of
    hoisting them. The workspace package set is
@@ -91,7 +84,6 @@ container:
    Wayland clipboard support
 10. **Build the pi-acp adapter** from source at a pinned tag into the
     optional `pi-acp` component (`$SNAP_COMPONENTS/pi-acp/`)
-11. **Install wrapper scripts + bash completion**
 11. **Assemble the gondolin component payload** (dedicated `gondolin-extension`
     part) — take pi's upstream Gondolin extension `index.ts` from the checkout
     `pi-build` staged, install the pinned `@earendil-works/gondolin` dependency
@@ -168,7 +160,8 @@ Host requirements (consumed from the host, not bundled):
 - QEMU: `qemu-system-x86_64` / `qemu-system-aarch64` **and** `qemu-img` on
   `PATH`. For example `sudo apt install qemu-system-x86 qemu-utils` on
   Debian/Ubuntu amd64, `qemu-system-arm qemu-utils` on arm64.
-  `pi-gondolin` checks for both and prints install hints when they are missing.
+  The `pi-gondolin` app checks for both and prints install hints when they are
+  missing.
 - `/dev/kvm` is optional: without it gondolin falls back to slow TCG emulation.
 
 The guest kernel/initramfs/rootfs and sandbox helpers (~330 MiB) are
@@ -177,7 +170,7 @@ downloaded on first use and cached in `~/.cache/gondolin`.
 Limitations:
 
 - riscv64 is unsupported — gondolin only publishes x86_64 and aarch64 guest
-  images, so `pi-gondolin` refuses to start there.
+  images, so the `pi-gondolin` app refuses to start there.
 - The experimental `krun` backend is not bundled (its runner is a ~20 MiB
   native binary that needs libkrun); qemu is the backend.
 - Other pi extensions still run on the host unless they delegate their work to

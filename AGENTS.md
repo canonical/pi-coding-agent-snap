@@ -22,18 +22,7 @@ runtime for execution:
 5. `npm run build:offline` (builds all workspace packages with pi's plain
    npm pipeline, reusing the model data staged in step 3)
 6. `npm prune --omit=dev --ignore-scripts` so only production deps ship
-7. Build the optional **gondolin component payload** in its own
-   `gondolin-extension` part: take `index.ts` from the pi checkout staged by
-   `pi-build` (so it matches this pi release's tool APIs), add the pinned
-   manifest + lockfile from `snap/local/gondolin-extension/`, run
-   `npm ci --omit=dev --omit=optional --ignore-scripts`, strip source
-   maps/`.d.ts`, and organize it into the `gondolin` component as
-   `lib/pi/extensions/gondolin`. The dependency set is pinned in
-   `snap/local/gondolin-extension/` rather than inherited from pi's example
-   manifest: reproducible, reviewed, and with our payload policy (no krun
-   runner). The build warns when pi's own pin diverges, because the extension
-   source comes from pi and may expect that API
-8. Assemble the runtime payload into `$SNAP/lib/pi/`: pruned `node_modules/`
+7. Assemble the runtime payload into `$SNAP/lib/pi/`: pruned `node_modules/`
    plus `dist/` + `package.json` + `README.md` (and docs/examples/CHANGELOG
    for coding-agent) from the workspace packages pi-coding-agent needs. The
    package set is **derived** by `snap/local/pi-workspace-packages.mjs` from
@@ -54,20 +43,14 @@ runtime for execution:
     prune --omit=dev`) into the optional `pi-acp` snap component (mounted at
     `$SNAP_COMPONENTS/pi-acp/`); it runs as the `pi-acp` app on the same
     bundled node
-11. Install wrapper scripts, the `pi` shim for pi-acp + bash completion
 11. Build the optional **gondolin component payload** in its own
     `gondolin-extension` part: take `index.ts` from the pi checkout staged
     by `pi-build` (so it matches this pi release's tool APIs), add the
     pinned manifest + lockfile from `snap/local/gondolin-extension/`, run
     `npm ci --omit=dev --omit=optional --ignore-scripts`, strip source
-    maps/`.d.ts`, adopt the package version as the component version and
-    organize it into the `gondolin` component as
+    maps/`.d.ts`, adopt the installed package version as the component
+    version, and organize it into the `gondolin` component as
     `lib/pi/extensions/gondolin`
-10. Build the [pi-acp](https://github.com/svkozak/pi-acp) ACP adapter from
-    source at a pinned `source-tag` (`npm ci` → `npm run build` → `npm
-    prune --omit=dev`) into the optional `pi-acp` snap component (mounted at
-    `$SNAP_COMPONENTS/pi-acp/`); it runs as the `pi-acp` app on the same
-    bundled node
 12. Install wrapper scripts, the `pi` shim for pi-acp + bash completion
 
 ## Key files
