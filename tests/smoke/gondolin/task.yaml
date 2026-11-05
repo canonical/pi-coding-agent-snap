@@ -18,6 +18,11 @@ execute: |
     if snap components "$SNAP_NAME" | grep -q "$SNAP_NAME+gondolin[[:space:]]*installed"; then
         snap remove "$SNAP_NAME+gondolin"
     fi
+
+    # pi subcommands do not use the extension; the wrapper must pass them
+    # through even with no component installed.
+    snap run "$SNAP_NAME.pi-gondolin" mcp | MATCH "pi mcp add"
+
     if snap run "$SNAP_NAME.pi-gondolin" --version > pi-gondolin.out 2>&1; then
         echo "pi-gondolin started without the gondolin component installed"
         exit 1

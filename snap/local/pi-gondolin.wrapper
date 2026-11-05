@@ -9,6 +9,15 @@
 
 set -eu
 
+# pi only recognizes its subcommands as the first argument; injecting -e in
+# front of them would turn e.g. `install` into a prompt. They do not use the
+# extension, so run them without it.
+case "${1-}" in
+    install | remove | uninstall | update | list | config | auth | mcp)
+        exec "$SNAP/bin/pi.wrapper" "$@"
+        ;;
+esac
+
 # snapd only exports SNAP_COMPONENTS from 2.78; older releases mount
 # components at the same place, /snap/<instance>/components/<snap-revision>,
 # so derive it from SNAP (/snap/<instance>/<snap-revision>) there.
