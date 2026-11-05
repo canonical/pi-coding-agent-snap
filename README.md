@@ -4,10 +4,12 @@ This repository contains snap packaging for the [pi coding agent](https://github
 
 The snap packaging is modeled after [opencode-snap](https://github.com/canonical/opencode-snap) and maintained separately from the upstream pi repository.
 
-The snap is named **`pi-coding-agent`** with two apps:
+The snap is named **`pi-coding-agent`** with four apps:
 - `pi-coding-agent` — default app (runs as `pi-coding-agent`)
 - `pi` — alias target (runs as `pi-coding-agent.pi`; an alias from `pi` can be requested on the Snap Store forum)
 - `pi-acp` — the [pi-acp](https://github.com/svkozak/pi-acp) [Agent Client Protocol](https://agentclientprotocol.com) adapter (runs as `pi-coding-agent.pi-acp`), for driving pi from ACP clients such as Zed. The adapter ships in the optional `pi-acp` [snap component](https://snapcraft.io/docs/explanation/how-snaps-work/snap-components/)
+- `pi-gondolin` — runs pi with the optional [Gondolin](#optional-gondolin-sandbox-component)
+  micro-VM sandbox component (runs as `pi-coding-agent.pi-gondolin`)
 
 After the alias is granted, users can run just `pi`.
 
@@ -65,7 +67,7 @@ container:
      step nests themes, UI assets, and export templates under
      `dist/modes/interactive/` and `dist/core/export-html/`)
 6. **`npm prune --omit=dev`** — drops devDependencies so only production deps ship
-7. **Assemble runtime payload** into `$SNAP/lib/pi/` — pruned `node_modules/`
+7. **Assemble the runtime payload** into `$SNAP/lib/pi/` — pruned `node_modules/`
    plus `dist/`, `package.json`/`README.md`, and each workspace package's own
    nested `node_modules/` when npm placed production deps there instead of
    hoisting them. The workspace package set is
@@ -82,7 +84,13 @@ container:
    Wayland clipboard support
 10. **Build the pi-acp adapter** from source at a pinned tag into the
     optional `pi-acp` component (`$SNAP_COMPONENTS/pi-acp/`)
-11. **Install wrapper scripts + bash completion**
+11. **Assemble the gondolin component payload** (dedicated `gondolin-extension`
+    part) — take pi's upstream Gondolin extension `index.ts` from the checkout
+    `pi-build` staged, install the pinned `@earendil-works/gondolin` dependency
+    set from `snap/local/gondolin-extension/` with
+    `npm ci --omit=dev --omit=optional`, strip source maps/type declarations,
+    and organize it into the optional `gondolin` component
+12. **Install wrapper scripts + bash completion**
 
 ### Parts in snapcraft.yaml
 
@@ -91,6 +99,7 @@ container:
 | `nodejs` | `nil` | Download and extract Node.js 22.x prebuilt binary; stage it as the snap's runtime `node` executable |
 | `pi-build` | `nil` | Clone pi source, fetch pi-ai model data, `npm ci`, `npm run build:offline`, `npm prune --omit=dev`, assemble `lib/pi` payload |
 | `pi-acp` | `nil` | Clone pi-acp source, `npm ci`, `npm run build`, `npm prune --omit=dev`, organize the package into the `pi-acp` component |
+| `gondolin-extension` | `nil` | Assemble the optional `gondolin` component payload: pi's staged extension `index.ts` + pinned gondolin dependency set |
 | `wl-clipboard` | `nil` | Stage-package from Ubuntu for Wayland clipboard |
 | `pi-configuration` | `nil` | Install wrapper scripts, pi-acp's `pi` shim, and bash completion files |
 
@@ -122,6 +131,57 @@ Pi's clipboard logic differs by display server — so we need **both** mechanism
 | `docs/` | Documentation | `docs/` directory |
 | `examples/` | Extension examples | `examples/` directory |
 
+## Optional Gondolin sandbox (component)
+
+The snap ships an optional **`gondolin` component** that routes pi's built-in
+tools (`read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`) and user `!`
+commands into a local Linux micro-VM using
+[Gondolin](https://github.com/earendil-works/gondolin). pi itself and its
+provider credentials stay on the host, and the directory pi was started in is
+mounted at `/workspace` in the guest.
+
+```bash
+# Install the component with the snap, or add it to an existing install
+sudo snap install pi-coding-agent+gondolin
+
+# Start pi with tool routing through the micro-VM
+pi-coding-agent.pi-gondolin
+```
+
+The component carries pi's upstream extension plus the
+`@earendil-works/gondolin` library and its dependencies. The dependency set is
+pinned in `snap/local/gondolin-extension/` rather than inherited from pi's
+example manifest, so it is reproducible and reviewed like any other pinned
+dependency. pi pins the same version today; the build warns if the two
+diverge.
+
+Host requirements (consumed from the host, not bundled):
+
+- QEMU: `qemu-system-x86_64` / `qemu-system-aarch64` **and** `qemu-img` on
+  `PATH`. For example `sudo apt install qemu-system-x86 qemu-utils` on
+  Debian/Ubuntu amd64, `qemu-system-arm qemu-utils` on arm64.
+  The `pi-gondolin` app checks for both and prints install hints when they are
+  missing.
+- `/dev/kvm` is optional: without it gondolin falls back to slow TCG emulation.
+
+The guest kernel/initramfs/rootfs and sandbox helpers (~330 MiB) are
+downloaded on first use and cached in `~/.cache/gondolin`.
+
+Limitations:
+
+- riscv64 is unsupported — gondolin only publishes x86_64 and aarch64 guest
+  images, so the `pi-gondolin` app refuses to start there.
+- The experimental `krun` backend is not bundled (its runner is a ~20 MiB
+  native binary that needs libkrun); qemu is the backend.
+- Other pi extensions still run on the host unless they delegate their work to
+  the VM as well.
+
+Design note: Gondolin's workspace mounts are host-side JavaScript providers
+(`RealFSProvider`) served by the pi process over an in-process VFS RPC
+channel, and its sandbox server has no cross-process API. The integration must
+therefore live inside pi (a snap component), not in a separately confined snap
+that pi would talk to.
+
 ## Version management
 
 Version updates are handled by **Renovate** with custom regex managers — no cron jobs needed:
@@ -129,6 +189,10 @@ Version updates are handled by **Renovate** with custom regex managers — no cr
 - `source-tag: v<version>` in `snap/snapcraft.yaml` → watches `earendil-works/pi` GitHub releases
 - Expected version string in `tests/smoke/pi/task.yaml`
 - pi-acp's `source-tag` in `snap/snapcraft.yaml` → watches `svkozak/pi-acp` GitHub releases
+- The `@earendil-works/gondolin` dependency in
+  `snap/local/gondolin-extension/package.json` (with its lockfile) →
+  watches the `@earendil-works/gondolin` npm package; the component's
+  `version` is adopted from the installed package at build time
 
 When a new upstream pi version is released, Renovate auto-creates a PR updating both locations.
 
@@ -141,11 +205,15 @@ pi-coding-agent-snap/
 │   │   ├── node-exec.sh            # Shared launcher (unsets SNAP_* env vars, execs node)
 │   │   ├── pi.wrapper              # Wrapper script for pi
 │   │   ├── pi-acp.wrapper          # Wrapper script for the pi-acp adapter
+│   │   ├── pi-gondolin.wrapper     # Wrapper script for the gondolin component
 │   │   ├── pi.shim                 # `pi` command on pi-acp's PATH
+│   │   ├── gondolin-extension/     # Pinned gondolin extension manifest + lockfile
 │   │   └── pi.completion           # Bash completion
-│   └── snapcraft.yaml              # Snap build definition
+│   └── snapcraft.yaml              # Snap build definition (incl. components)
 ├── tests/
 │   └── smoke/
+│       ├── gondolin/
+│       │   └── task.yaml           # gondolin component smoke test
 │       └── pi/
 │           └── task.yaml           # Basic smoke test
 ├── publishing/
@@ -186,6 +254,9 @@ snapcraft pack -v
 # Install locally
 sudo snap install --classic --dangerous ./pi-coding-agent_*.snap
 
+# Optionally install the Gondolin sandbox component
+sudo snap install --dangerous ./pi-coding-agent+gondolin_*.comp
+
 # Run (default app)
 pi-coding-agent
 
@@ -212,7 +283,7 @@ See [AGENTS.md](AGENTS.md) for project-specific rules. The snap packaging is mai
 
 ## License
 
-MIT AND Apache-2.0 — see [LICENSE](LICENSE). The bundled pi code is MIT (upstream); the bundled Node.js runtime is MIT (Node.js contributors); the pi-acp adapter component is MIT (Sergii Kozak); the snap packaging files in this repository are Apache-2.0 (Canonical Ltd.).
+MIT AND Apache-2.0 — see [LICENSE](LICENSE). The bundled pi code is MIT (upstream); the bundled Node.js runtime is MIT (Node.js contributors); the pi-acp adapter component is MIT (Sergii Kozak); the Gondolin component is Apache-2.0 (earendil-works) and ships its own license text; the snap packaging files in this repository are Apache-2.0 (Canonical Ltd.).
 
 ## See also
 

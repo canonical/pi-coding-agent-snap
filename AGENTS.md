@@ -43,17 +43,27 @@ runtime for execution:
     prune --omit=dev`) into the optional `pi-acp` snap component (mounted at
     `$SNAP_COMPONENTS/pi-acp/`); it runs as the `pi-acp` app on the same
     bundled node
-11. Install wrapper scripts, the `pi` shim for pi-acp + bash completion
+11. Build the optional **gondolin component payload** in its own
+    `gondolin-extension` part: take `index.ts` from the pi checkout staged
+    by `pi-build` (so it matches this pi release's tool APIs), add the
+    pinned manifest + lockfile from `snap/local/gondolin-extension/`, run
+    `npm ci --omit=dev --omit=optional --ignore-scripts`, strip source
+    maps/`.d.ts`, adopt the installed package version as the component
+    version, and organize it into the `gondolin` component as
+    `lib/pi/extensions/gondolin`
+12. Install wrapper scripts, the `pi` shim for pi-acp + bash completion
 
 ## Key files
 
 | File | Purpose |
 |---|---|
-| `snap/snapcraft.yaml` | Snap build definition with 5 parts |
+| `snap/snapcraft.yaml` | Snap build definition with 6 parts |
 | `snap/local/pi.wrapper` | Wrapper for pi |
 | `snap/local/pi-acp.wrapper` | Wrapper for the pi-acp adapter; runs it from `$SNAP_COMPONENTS/pi-acp` (or explains how to install the component), puts `pi.shim` first on `PATH` |
 | `snap/local/node-exec.sh` | Shared launcher sourced by both wrappers: AppArmor onexec, unsets `SNAP_*`, riscv64 undici fix, execs bundled node |
 | `snap/local/pi.shim` | `pi` command for pi-acp (installed as `lib/pi/packages/coding-agent/bin/pi`); drops itself from `PATH`, recovers `$SNAP`, execs `pi.wrapper` |
+| `snap/local/pi-gondolin.wrapper` | Wrapper for the gondolin component; resolves it from `$SNAP_COMPONENTS` (or the pre-2.78 fallback), guards missing component/architecture/host QEMU, then runs `pi.wrapper -e <extension>` |
+| `snap/local/gondolin-extension/` | Pinned `@earendil-works/gondolin` manifest + lockfile used to build the gondolin component payload |
 | `snap/local/pi.completion` | Bash completion for `pi` and `pi-coding-agent` |
 | `snap/local/pi-workspace-packages.mjs` | Derives the workspace packages to ship from compiled imports and transitive production dependencies |
 | `renovate.json` | Custom regex managers for version updates |
@@ -62,6 +72,7 @@ runtime for execution:
 | `tests/smoke/pi/task.yaml` | Snap smoke tests, including per-package production dependency resolution checks |
 | `tests/smoke/joke/task.yaml` | Offline LLM replay test (mannequin) |
 | `tests/smoke/joke/recordings/joke/` | Recorded OpenAI-compatible session replayed by that test |
+| `tests/smoke/gondolin/task.yaml` | Gondolin component smoke test (install, payload, dependency resolution, extension-load probe) |
 | `tests/unit/pi-workspace-packages.test.mjs` | Regression test for the workspace selector (`node --test tests/unit/*.test.mjs`; not yet wired into CI) |
 | `.github/workflows/build.yml` | CI entry point; delegates to `tasteful-crafts.yml` |
 | `.github/workflows/tasteful-crafts.yml` | Reusable build → spread → publish orchestrator |
@@ -98,6 +109,17 @@ runtime for execution:
   systems, and Snap Store upload to `latest/edge` (branch) or
   `latest/candidate` (tag); `latest/stable` is reached via manual
   `snapcraft-promote`.
+- **Gondolin component** (optional): carries pi's upstream tool-routing
+  extension plus `@earendil-works/gondolin`. `pi-gondolin` resolves it through
+  `$SNAP_COMPONENTS` (2.78+), falling back to
+  `${SNAP%/*}/components/$SNAP_REVISION`, *before* `pi.wrapper` unsets `SNAP*`,
+  then execs `pi.wrapper -e <extension>`.
+  The sandbox must run in pi's process — gondolin's workspace VFS providers are
+  host-side JavaScript objects served over an in-process RPC channel, and its
+  sandbox server has no cross-process API — so a separate confined snap cannot
+  host it. Consumes host QEMU (`qemu-system-*` and `qemu-img`); the
+  experimental krun runner is deliberately omitted. riscv64 refuses at runtime
+  (no gondolin guest images).
 
 ## Tests
 
@@ -154,6 +176,30 @@ exactly that `PATH` entry, so the shim strips it from `PATH` (keeping it
 out of the shells pi runs), recovers `$SNAP` by removing the fixed suffix,
 and execs `pi.wrapper`. The shim lives two levels below coding-agent so
 `/changelog` finds the shipped `CHANGELOG.md`.
+The gondolin pin lives in
+`snap/local/gondolin-extension/package.json` + `package-lock.json`
+(Renovate's npm manager; regenerate the lockfile with npm 10, the
+version bundled with Node 22). Keep it at a release supporting
+Node >= 22.19 (0.13.0 or later) and check the build log for the warning
+when pi's own pin diverges.
+
+## gondolin component
+
+gondolin ships as the optional `gondolin` snap component
+(`snap install pi-coding-agent+gondolin`), built by the
+`gondolin-extension` part from pi's upstream tool-routing extension plus
+the pinned `@earendil-works/gondolin` dependency set. Its `version` is
+adopted from the installed package (`adopt-info: gondolin-extension` +
+`craftctl set components.gondolin.version`) rather than set statically
+like pi-acp's, since craftctl only rejects the hyphens in that name. The
+wrapper uses `$SNAP_COMPONENTS` when snapd exports it (2.78+) and falls
+back to `${SNAP%/*}/components/$SNAP_REVISION`. Unlike pi-acp, the sandbox
+must run in pi's process: gondolin's workspace VFS providers are host-side
+JavaScript objects served over an in-process RPC channel, and its sandbox
+server has no cross-process API, so a separate confined snap cannot host
+it. It consumes host QEMU (`qemu-system-*` and `qemu-img`); the
+experimental krun runner is deliberately omitted, and riscv64 refuses at
+runtime (no gondolin guest images).
 
 ## Clipboard strategy
 

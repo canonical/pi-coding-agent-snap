@@ -1,0 +1,115 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Canonical Ltd.
+
+summary: Smoke test for the optional gondolin component
+details: |
+    Installs the component from the locally built .comp and checks the payload,
+    dependency resolution with the bundled Node.js, and that pi loads the
+    extension and executes gondolin code.
+
+    No micro-VM boot here: that needs host QEMU plus ~330 MiB of guest assets.
+
+execute: |
+    SNAP_NAME=pi-coding-agent
+    REV="$(readlink "/snap/$SNAP_NAME/current")"
+    EXT="/snap/$SNAP_NAME/components/$REV/gondolin/lib/pi/extensions/gondolin"
+
+    # Without the component pi-gondolin must explain how to install it.
+    if snap components "$SNAP_NAME" | grep -q "$SNAP_NAME+gondolin[[:space:]]*installed"; then
+        snap remove "$SNAP_NAME+gondolin"
+    fi
+
+    # pi subcommands do not use the extension; the wrapper must pass them
+    # through even with no component installed.
+    snap run "$SNAP_NAME.pi-gondolin" mcp | MATCH "pi mcp add"
+
+    if snap run "$SNAP_NAME.pi-gondolin" --version > pi-gondolin.out 2>&1; then
+        echo "pi-gondolin started without the gondolin component installed"
+        exit 1
+    fi
+    MATCH "the gondolin component of the $SNAP_NAME snap is not installed" < pi-gondolin.out
+    MATCH "snap install $SNAP_NAME\\+gondolin" < pi-gondolin.out
+    rm -f pi-gondolin.out
+
+    # Install from the local artifact, as a user would. Task scripts do not run
+    # in the project root, so reference the artifact through $SPREAD_PATH.
+    snap install --dangerous "$SPREAD_PATH"/"$SNAP_NAME"+gondolin_*.comp
+    snap components "$SNAP_NAME" | MATCH "$SNAP_NAME\\+gondolin[[:space:]]+installed"
+
+    # Payload layout; the component is mounted next to the snap revision.
+    test -d "$EXT"
+    test -f "$EXT/index.ts"
+    test -f "$EXT/package.json"
+    test -f "$EXT/node_modules/@earendil-works/gondolin/dist/src/index.js"
+    # Apache-2.0 license text for the redistributed gondolin code.
+    test -f "$EXT/node_modules/@earendil-works/gondolin/LICENSE"
+
+    # The component version is adopted from the installed gondolin package.
+    # `snap components` has no version column, so use `snap component`, which
+    # reports the installed metadata.
+    NODE="/snap/$SNAP_NAME/current/node/bin/node"
+    GONDOLIN_VERSION="$("$NODE" -p "require('$EXT/node_modules/@earendil-works/gondolin/package.json').version")"
+    snap component "$SNAP_NAME+gondolin" | MATCH "installed: $GONDOLIN_VERSION"
+
+    # Lean payload: no maps/type declarations, no krun runner (qemu backend).
+    test -z "$(find "$EXT" \( -name '*.d.ts' -o -name '*.map' \) -print -quit)"
+    test -z "$(find "$EXT/node_modules/@earendil-works" -maxdepth 1 \
+        -name 'gondolin-krun-runner-*' -print -quit)"
+
+    # npm symlinks must resolve inside the component.
+    test -z "$(find "$EXT" -type l ! -exec test -e {} \; -print -quit)"
+
+    # Resolve deps with the bundled node from the extension dir, as pi does
+    # (`-e` resolves bare specifiers from the working directory).
+    (cd "$EXT" && "$NODE" --input-type=module -e '
+      const gondolin = await import("@earendil-works/gondolin");
+      for (const name of ["VM", "RealFSProvider"]) {
+        if (typeof gondolin[name] !== "function") {
+          throw new Error("missing export: " + name);
+        }
+      }
+      console.log("import ok");
+    ') | MATCH "import ok"
+
+    # Spread guests ship no QEMU: accept either pi or the wrapper's install
+    # hint. The expected version comes from pi itself to survive bumps.
+    PI_VERSION="$(snap run "$SNAP_NAME.pi" --version)"
+    if snap run "$SNAP_NAME.pi-gondolin" --version > pi-gondolin.out 2>&1; then
+        MATCH "$PI_VERSION" < pi-gondolin.out
+    else
+        MATCH "host QEMU tooling not found" < pi-gondolin.out
+    fi
+    rm -f pi-gondolin.out
+
+    # snapd before 2.78 does not export SNAP_COMPONENTS; the wrapper must then
+    # derive the component path from SNAP and SNAP_REVISION. Run the installed
+    # wrapper directly with only those set: it must get past the component
+    # check.
+    if env -u SNAP_COMPONENTS SNAP="/snap/$SNAP_NAME/current" SNAP_REVISION="$REV" \
+        SNAP_INSTANCE_NAME="$SNAP_NAME" \
+        timeout 60 "/snap/$SNAP_NAME/current/bin/pi-gondolin.wrapper" --version \
+        > pi-gondolin.out 2>&1
+    then
+        MATCH "$PI_VERSION" < pi-gondolin.out
+    else
+        MATCH "host QEMU tooling not found" < pi-gondolin.out
+    fi
+    NOMATCH "not installed" < pi-gondolin.out
+    rm -f pi-gondolin.out
+
+    # An unknown image ref fails fast in gondolin's builtin registry: proves
+    # the extension loads and runs, without QEMU or the guest asset download.
+    # The gondolin app itself would stop at its QEMU guard, so run pi.wrapper
+    # in the snap's own environment (`snap run --shell`) rather than faking
+    # SNAP_* for a direct invocation.
+    GONDOLIN_DEFAULT_IMAGE=pi-snap-smoke-does-not-exist:0.0.0 \
+        timeout 120 snap run --shell "$SNAP_NAME.pi-gondolin" -c \
+        '"$SNAP/bin/pi.wrapper" -e "$0" --mode rpc --no-session' "$EXT" \
+        < /dev/null > gondolin-probe.out 2>&1 || true
+    MATCH '"statusKey":"gondolin"' < gondolin-probe.out
+    MATCH "Gondolin: starting" < gondolin-probe.out
+    MATCH "image ref not found in builtin registry" < gondolin-probe.out
+    rm -f gondolin-probe.out
+
+    # The main app keeps working with the component installed.
+    snap run "$SNAP_NAME.pi" --version | MATCH "$PI_VERSION"

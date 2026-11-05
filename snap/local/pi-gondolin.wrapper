@@ -1,0 +1,77 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: Canonical Ltd.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Wrapper script for the gondolin component's tool-routing extension, which
+# runs pi's built-in tools and `!` commands inside a micro-VM.
+#
+#   sudo snap install pi-coding-agent+gondolin
+
+set -eu
+
+# pi only recognizes its subcommands as the first argument; injecting -e in
+# front of them would turn e.g. `install` into a prompt. They do not use the
+# extension, so run them without it.
+case "${1-}" in
+    install | remove | uninstall | update | list | config | auth | mcp)
+        exec "$SNAP/bin/pi.wrapper" "$@"
+        ;;
+esac
+
+# snapd only exports SNAP_COMPONENTS from 2.78; older releases mount
+# components at the same place, /snap/<instance>/components/<snap-revision>,
+# so derive it from SNAP (/snap/<instance>/<snap-revision>) there.
+GONDOLIN_EXTENSION="${SNAP_COMPONENTS:-${SNAP%/*}/components/$SNAP_REVISION}/gondolin/lib/pi/extensions/gondolin"
+if [ ! -d "$GONDOLIN_EXTENSION" ]; then
+    _SNAP_NAME="${SNAP_INSTANCE_NAME:-pi-coding-agent}"
+    echo "error: the gondolin component of the $_SNAP_NAME snap is not installed." >&2
+    echo "Install it with: sudo snap install $_SNAP_NAME+gondolin" >&2
+    exit 1
+fi
+
+# Only x86_64 and aarch64 guest images exist; anything else would be TCG-slow.
+case "$(uname -m)" in
+    x86_64)
+        QEMU=qemu-system-x86_64
+        QEMU_DEB=qemu-system-x86
+        QEMU_FEDORA=qemu-system-x86-core
+        QEMU_ARCH=qemu-system-x86
+        ;;
+    aarch64 | arm64)
+        QEMU=qemu-system-aarch64
+        QEMU_DEB=qemu-system-arm
+        QEMU_FEDORA=qemu-system-aarch64-core
+        QEMU_ARCH=qemu-system-aarch64
+        ;;
+    *)
+        echo "error: gondolin does not support $(uname -m); its guest images" >&2
+        echo "are x86_64 and aarch64 only." >&2
+        exit 1
+        ;;
+esac
+
+# Gondolin spawns qemu and runs qemu-img itself, both from the host: fail here
+# rather than deep inside a tool call.
+missing=""
+command -v "$QEMU" >/dev/null 2>&1 || missing="$QEMU"
+command -v qemu-img >/dev/null 2>&1 || missing="${missing:+$missing }qemu-img"
+if [ -n "$missing" ]; then
+    cat >&2 <<EOF
+error: host QEMU tooling not found: $missing
+
+Gondolin boots its micro-VMs with the host QEMU installation. Install it, for
+example:
+    Debian/Ubuntu: sudo apt install $QEMU_DEB qemu-utils
+    Fedora:        sudo dnf install $QEMU_FEDORA qemu-img
+    Arch:          sudo pacman -S $QEMU_ARCH qemu-img
+EOF
+    exit 1
+fi
+
+# Without /dev/kvm gondolin falls back to slow TCG; warn, don't refuse.
+if [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; then
+    echo "warning: /dev/kvm is not accessible; falling back to slow TCG emulation." >&2
+    echo "warning: add your user to the 'kvm' group for hardware acceleration." >&2
+fi
+
+exec "$SNAP/bin/pi.wrapper" -e "$GONDOLIN_EXTENSION" "$@"
