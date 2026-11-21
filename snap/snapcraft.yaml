@@ -69,7 +69,7 @@ components:
     # Static, not adopt-info: craftctl rejects the hyphen in
     # `components.pi-acp.version`. Renovate bumps this together with the
     # pi-acp part's source-tag; keep it directly after `type`.
-    version: "0.0.34"
+    version: "0.0.35"
     summary: ACP adapter for pi
     description: |
       pi-acp (https://github.com/svkozak/pi-acp) speaks the Agent Client
@@ -376,7 +376,7 @@ parts:
     plugin: nil
     source: https://github.com/svkozak/pi-acp
     source-type: git
-    source-tag: v0.0.34
+    source-tag: v0.0.35
     build-environment:
       - PATH: "/usr/local/bin:${PATH}"
     override-build: |
