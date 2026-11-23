@@ -154,7 +154,7 @@ parts:
     plugin: nil
     source: https://github.com/earendil-works/pi
     source-type: git
-    source-tag: v1.5.2
+    source-tag: v1.6.0
     build-environment:
       - PATH: "/usr/local/bin:${PATH}"
     override-build: |
